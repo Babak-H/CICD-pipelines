@@ -1,0 +1,14 @@
+variables: 
+  MICROSERVICE: ""
+  SERVICE_VERSION: ""
+
+build:
+  stage: build
+  # if you want to add something to before_script or script section, you also need to include these lines in the ci file, otherwise it will override this and not execute the lines in here
+  before_script:
+    - export IMAGE_NAME=$CI_REGISTRY_IMAGE/microservice/$MICROSERVICE
+    - export IMAGE_TAG=$SERVICE_VERSION
+  script:
+    - docker login $CI_REGISTRY -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD 
+    - docker build -t $IMAGE_NAME:$IMAGE_TAG .
+    - docker push $IMAGE_NAME:$IMAGE_TAG 

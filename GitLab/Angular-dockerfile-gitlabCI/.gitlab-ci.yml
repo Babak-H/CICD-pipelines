@@ -1,0 +1,70 @@
+# frontend full CI/CD
+
+stages:
+  - test
+  - build
+  - deploy
+
+variables:
+  IMAGE_NAME: "registry.code.my-corp.com/rim/frontend/my-app-frontend"
+  CACHE_PATH: "node_modules/"
+
+cache:
+  paths:
+    - $CACHE_PATH
+  policy: pull-push
+
+run_unit_tests:
+  stage: test
+  image: node:14-alpine3.15
+  before_script:
+    - apk update && apk add --no-cache nmap && apk add chromium
+    - export CHROME_BIN='/usr/bin/chromium-browser'
+    - npm install
+  script:
+    - npm test
+
+sast:
+  stage: test
+  image: node:17-alpine3.14
+  needs:
+    - run_unit_tests
+
+build_push_image:
+  rules:
+    - if: $CI_COMMIT_BRANCH == "master" || $CI_COMMIT_BRANCH == "main"
+      when: always
+    - when: never
+  stage: build
+  tags:
+    - privileged
+  services:
+    - name: docker:20.10.16-dind
+      command:
+        - "--registry-mirror"
+        - "https://docker-cache.repository-ng.intranet.my-corp.com"
+        - "--registry-mirror"
+        - "https://mirror.gcr.io"
+  image: docker:20.10.16-dind
+  script:
+    - docker build -t $IMAGE_NAME .
+    - docker login $CI_REGISTRY -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD
+    - docker push $IMAGE_NAME
+
+deploy-to-k8s:
+  rules:
+    - if: $CI_COMMIT_BRANCH == "master" || $CI_COMMIT_BRANCH == "main"
+      when: always
+    - when: never
+  stage: deploy
+  image:
+    name: bitnami/kubectl:1.21-debian-11
+    entrypoint: [""]
+  before_script:
+    - export KUBECONFIG=$KUBE_CONFIG
+  script:
+    - kubectl apply -f kubernetes/frontend.yaml
+    - kubectl rollout restart deployment transporter -n rim-dev
+
+include:
+  - template: Jobs/SAST.gitlab-ci.yml

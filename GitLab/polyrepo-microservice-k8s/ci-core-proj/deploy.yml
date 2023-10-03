@@ -1,0 +1,24 @@
+variables: 
+  MICROSERVICE: ""
+  SERVICE_VERSION: "" 
+  DEPLOYMENT_SERVER_HOST: ""
+  SERVICE_PORT: ""
+  APP_ENDPOINT: ""
+  REPLICAS: ""
+
+deploy:
+  stage: deploy
+  before_script:
+    - export IMAGE_NAME=$CI_REGISTRY_IMAGE/microservice/$MICROSERVICE
+    - export IMAGE_TAG=$SERVICE_VERSION
+    - export SERVICE_PORT=$SERVICE_PORT
+    - export MICRO_SERVICE=$MICROSERVICE
+    - export REPLICAS=$REPLICAS
+    - export KUBE_CONFIG=$KUBE_CONFIG
+  script:
+    - kubectl create secret docker-registery my-reg-key --docker-server=$CI_REGISTRY --docker-username=$GITLAB_USER --docker-password=$GITLAB_PASSWORD -n my-microservice --dry-run=client -o yaml | kubectl apply -f -
+    - envsubst < kubernetes/deployment.yaml | kubectl apply -f -
+    - envsubst < kubernetes/service.yaml | kubectl apply -f -
+
+# in case not installed: apt-get install gettext-base
+

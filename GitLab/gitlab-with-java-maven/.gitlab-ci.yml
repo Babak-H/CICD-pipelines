@@ -1,0 +1,49 @@
+image: maven:latest
+
+# List of stages for jobs, and their order of execution
+stages:          
+  - build
+  - test
+  - deploy
+
+variables:
+  MAVEN_CLI_OPTIONS: "--batch-mode"  # non-interactive mode
+  MAVEN_OPTIONS: "-Dmaven.repo.local=$CI_PROJECT_DIR/.m2/repository"
+
+cache:
+  paths:
+    - .m2/repository
+
+# This job runs in the build stage, which runs first.
+build-job:       
+  stage: build
+  script:
+    - echo "Compiling the code..."
+    - mvn $MAVEN_CLI_OPTIONS compile
+
+# This job runs in the test stage.
+unit-test-job:   
+  stage: test    # It only starts when the job in the build stage completes successfully.
+  script:
+    - echo "Running unit tests"
+    - mvn $MAVEN_CLI_OPTIONS test
+  artifacts:
+    when: always
+    reports:
+      junit:
+        - target/surefire-reports/TEST-*.xml
+
+# This job also runs in the test stage.
+lint-test-job:   
+  stage: test    # It can run at the same time as unit-test-job (in parallel).
+  script:
+    - echo "Linting code"
+
+# This job runs in the deploy stage.
+deploy-job:      
+  stage: deploy  # It only runs when *both* jobs in the test stage complete successfully.
+  environment: staging
+  script:
+    - echo "Deploying application..."
+    - mvn $MAVEN_CLI_OPTIONS package
+    - mvn $MAVEN_CLI_OPTIONS exec:java -Dexec.mainClass="com.mycompanny.app.App"

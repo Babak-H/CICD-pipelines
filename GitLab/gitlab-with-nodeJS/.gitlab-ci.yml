@@ -1,0 +1,207 @@
+workflow:
+  rules:
+    #     current branch                what event is causing this pipeline triggered
+    - if: $CI_COMMIT_BRANCH != "main" && $CI_PIPELINE_SOURCE != "merge_request_event"
+      when: never
+    - when: always
+
+variables:
+  IMAGE_NAME: $CI_REGISTRY_IMAGE
+  IMAGE_TAG: ""
+  DEV_SERVER_HOST: ec2-54-163-3-64.compute-1.amazonaws.com:/home/ubuntu
+  DEV_ENDPOINT: http://ec2-54-163-3-64.compute-1.amazonaws.com:3000
+  STAGING_SERVER_HOST: ec2-54-163-3-64.compute-1.amazonaws.com:/home/ubuntu
+  STAGING_ENDPOINT: http://ec2-54-163-3-64.compute-1.amazonaws.com:4000
+  PROD_SERVER_HOST: ec2-54-163-3-64.compute-1.amazonaws.com:/home/ubuntu
+  PROD_ENDPOINT: http://ec2-54-163-3-64.compute-1.amazonaws.com:5000
+
+# this services section is needed for docker-in-docker, so we can create a docker image, from inside another docker image :)
+services:
+  - docker:19.03.12-dind
+
+stages:
+  - test
+  - build
+  - deploy_dev
+  - deploy_staging
+  - deploy_prod
+
+
+run_unit_tests:
+  stage: test
+  image: node:17-alpine3.14
+  cache:
+    # key name for the cache
+    key: "$CI_COMMIT_REF_NAME"
+    # where to save the cache
+    paths:
+      - app/node_modules
+    # this is the default policy, to first download the cache, then upload back if there are any changes
+    policy: pull-push
+  tags:
+    - docker
+  before_script:
+    - cd app
+    - npm install
+  script:
+    - npm test
+  artifacts:
+    when: always
+    paths:
+      - app/junit.xml
+    reports:
+      junit: app/junit.xml
+
+
+run_lint_checks:
+  image: node:17-alpine3.14
+  cache:
+    key: "$CI_COMMIT_REF_NAME"
+    paths:
+      - app/node_modules
+    policy: pull # pull means read-only for the cache
+  stage: test
+  before_script:
+    - cd app
+    - npm install
+  script:
+    - echo "Running lint check"
+
+
+# we create a Job for the included template script (it may run several jobs from that file)
+# SAST.gitlab-ci.yml
+sast:
+  stage: test
+
+
+build_image:
+  stage: build
+  tags:
+    - docker
+  image: docker:stable
+  before_script:
+    - echo "$CI_REGISTRY"
+    - echo "$CI_REGISTRY_USER"
+    - echo "$CI_REGISTRY_IMAGE"  
+
+    - export PACKAGE_JSON_VERSION=$(cat app/package.json | jq -r .version)
+    # CI_PIPELINE_IID => unique value that we use for each new version of our docker image
+    - export VERSION=$PACKAGE_JSON_VERSION.$CI_PIPELINE_IID
+    - echo "VERSION=$VERSION" >> build.env
+  script:
+    - docker build -t $IMAGE_NAME:$VERSION .
+  # in order to persist the file that we created, we need artifacts section in this job
+  artifacts:
+    reports:
+      dotenv: build.env
+
+
+push_image:
+  stage: build
+  # write this step to download artifacts from other jobs in same stage (it also includes the functionality of the "dependencies" step)
+  needs:
+    - build_image
+  # write this section to run other jobs in same stage before this one
+  # dependencies:
+  #   - build_image
+  tags:
+    - docker
+  image: docker:stable
+  before_script:   
+    - docker login $CI_REGISTRY -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD 
+  script:
+    - docker push $IMAGE_NAME:$VERSION 
+
+
+# template function
+.deploy:
+  # do NOT download artifacts from any previous stage
+  dependencies: []
+  before_script:
+    # normal private ssh key is all in one line, we use "sed" command to make separate lines so it can be used by gitlab file
+    - echo $SSH_KEY | sed -e "s/-----BEGIN RSA PRIVATE KEY-----/&\n/" -e "s/-----END RSA PRIVATE KEY-----/\n&/" -e "s/\S\{64\}/&\n/g"\ > deploy-key.pem
+    - chmod 400 deploy-key.pem
+  variables:
+    SSH_KEY: ""
+    SERVER_HOST: ""
+    DEPLOY_ENV: ""
+    APP_PORT: ""
+    ENDPOINT: ""
+  script:
+    # we need to copy this file to dev server, since it will be applied there
+    - scp -o StrictHostKeyChecking=no -i deploy-key.pem ./docker-compose.yml ubuntu@$SERVER_HOST
+    # COMPOSE_PROJECT_NAME => env variable from docker compose => https://docs.docker.com/compose/reference/envvars/#compose_project_name
+    - ssh -o StrictHostKeyChecking=no -i deploy-key.pem ubuntu@SERVER_HOST "
+        docker login $CI_REGISTRY -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD &&
+        export COMPOSE_PROJECT_NAME=$DEPLOY_ENV &&
+        export IMAGE_NAME=$IMAGE_NAME &&
+        export IMAGE_TAG=$VERSION  &&
+        export DC_APP_PORT=$APP_PORT &&
+        
+        docker-compose -f docker-compose.yml down &&
+        docker-compose -f docker-compose.yml up -d"
+  environment:
+    name: $DEPLOY_ENV
+    url: $ENDPOINT
+
+
+deploy_to_dev:
+  extends: .deploy
+  stage: deploy_dev
+  variables:
+    SSH_KEY: $SSH_PRIVATE_KEY
+    SERVER_HOST: $DEV_SERVER_HOST
+    DEPLOY_ENV: deployment
+    APP_PORT: 3000
+    ENDPOINT: $DEV_ENDPOINT
+
+
+# run functional tests after deploying to dev environment
+run_functional_tests:
+  stage: deploy_dev
+  needs:
+    - deploy_to_dev
+  script:
+    - echo "running functional tests"
+
+
+deploy_to_staging:
+  extends: .deploy
+  dependencies: []
+  stage: deploy_staging
+  variables:
+    # here we have it same in all environments, but in real-life scenario each env is seperate machine,so they have different ssh-keys
+    SSH_KEY: $SSH_PRIVATE_KEY
+    SERVER_HOST: $STAGING_SERVER_HOST
+    DEPLOY_ENV: deployment
+    APP_PORT: 4000
+    ENDPOINT: $STAGING_ENDPOINT
+
+
+run_performance_tests:
+  stage: deploy_staging
+  # run these tests only after deployment of staging env
+  needs:
+    - deploy_to_staging
+  script:
+    - echo "running performance tests"
+
+
+deploy_to_prod:
+  extends: .deploy
+  stage: deploy_prod
+  variables:
+    SSH_KEY: $SSH_PRIVATE_KEY
+    SERVER_HOST: $PROD_SERVER_HOST
+    DEPLOY_ENV: production
+    APP_PORT: 5000
+    ENDPOINT: $PROD_ENDPOINT
+  # do NOT run this job automatically, only run it with user's approval
+  when: manual
+
+
+# when we include this file, GitLab is smart enough to include only the job or jobs that is related to our project's language (here is NodeJS)
+include:
+  # gitlab is smart enough to detect where is the full repo address: https://gitlab.com/gitlab-org/gitlab/-/blob/master/lib/gitlab/ci/templates/Jobs/SAST.gitlab-ci.yml
+  - template: Jobs/SAST.gitlab-ci.yml
+

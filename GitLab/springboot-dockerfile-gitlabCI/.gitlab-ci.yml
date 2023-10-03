@@ -1,0 +1,67 @@
+# main repository
+include:
+  - project: my-corp/java/transporter-config-repo
+    ref: "master"
+    file: gitlab-template/.gitlab-ci-template.yml
+
+variables:
+  IMAGE_NAME: "registry.code.my-corp.com/rim/java/transporter-notification"
+  VERSION: "1.0.0-SNAPSHOT"
+
+# reolace whatever we have in template with this one
+assemble-jar-file:
+  stage: assemble
+  environment: staging
+  script:
+    - echo "Deploying application..."
+    - mvn $MAVEN_CLI_OPTIONS package -Dmaven.test.skip
+    - mvn clean install deploy -DskipTests -s settings.xml
+  artifacts:
+    paths:
+      - $ASSEMBLE_ARTIFACT_PATH
+
+deploy-to-k8s:
+  script:
+    - kubectl apply -f kubernetes/notification.yml
+
+
+
+
+# other repos
+# include:
+#   - project: rim/java/transporter-config-repo
+#     ref: "master"
+#     file: gitlab-template/.gitlab-ci-template.yml
+
+# variables:
+#   IMAGE_NAME: "registry.code.my-corp.com/rim/java/transporter-discovery-server"
+#   VERSION: "1.0.2"
+
+# deploy-to-k8s:
+#   script:
+#     - kubectl apply -f kubernetes/discovery-server.yaml
+
+
+
+
+
+# other repos
+# include:
+#   - project: rim/java/transporter-config-repo
+#     ref: "master"
+#     file: gitlab-template/.gitlab-ci-template.yml
+
+# variables:
+#   IMAGE_NAME: "registry.code.roche.com/rim/java/transporter-config-server"
+#   VERSION: "1.0.0-SNAPSHOT"
+
+# unit-test:
+#   stage: test
+#   script:
+#     - echo "Running unit tests"
+#     # - mvn $MAVEN_CLI_OPTIONS test
+#   artifacts:
+#     when: always
+#     reports:
+#       junit:
+#         - $JUNIT_REPORT_PATH

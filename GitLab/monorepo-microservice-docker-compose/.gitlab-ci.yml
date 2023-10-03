@@ -1,0 +1,131 @@
+workflow:
+  rules:
+    - if: $CI_COMMIT_BRANCH != "main" && $CI_PIPELINE_SOURCE != "merge_request_event"
+      when: never
+    - when: always
+
+variables: 
+  DEPLOYMENT_SERVER_HOST: 35.228.221.107
+  APP_ENDPOINT: ""
+
+stages:
+  - build
+  - deploy
+
+
+.build:
+  stage: build
+  tags:
+    - gcp
+    - shell
+  variables: 
+    MICROSERVICE: ""
+    SERVICE_VERSION: ""
+  before_script:
+    - cd $MICROSERVICE
+    - export IMAGE_NAME=$CI_REGISTRY_IMAGE/microservice/$MICROSERVICE
+    - export IMAGE_TAG=$SERVICE_VERSION
+  script:
+    - docker login $CI_REGISTRY -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD 
+    - docker build -t $IMAGE_NAME:$IMAGE_TAG .
+    - docker push $IMAGE_NAME:$IMAGE_TAG 
+
+
+build_frontend:
+  extends: .build
+  variables: 
+    MICROSERVICE: frontend
+    SERVICE_VERSION: "1.3"
+  # only build this job when frontend folder has some changes
+  only:
+    changes:
+      - "frontend/**/**"
+
+
+build_products:
+  extends: .build
+  variables: 
+    MICROSERVICE: products
+    SERVICE_VERSION: "1.5"
+  only:
+    changes:
+      - "product/**/**"
+
+
+build_shopping_cart:
+  extends: .build
+  variables: 
+    MICROSERVICE: shopping-cart
+    SERVICE_VERSION: "1.2"
+  only:
+    changes:
+      - "shopping-cart/**/**"
+
+
+.deploy:
+  stage: deploy
+  tags:
+    - gcp
+    - shell
+  variables: 
+    MICROSERVICE: ""
+    SERVICE_VERSION: "" 
+    APP_PORT:
+  before_script:
+    - chmod 400 $SSH_PRIVATE_KEY
+    - export IMAGE_NAME=$CI_REGISTRY_IMAGE/microservice/$MICROSERVICE
+    - export IMAGE_TAG=$SERVICE_VERSION
+    # || true  => means if previous command fails, just return true and continue to next command
+  script:
+    - scp -o StrictHostKeyChecking=no ./docker-compose.yaml babak@$DEPLOYMENT_SERVER_HOST:/home/Babak  # -i $SSH_PRIVATE_KEY
+    - ssh -o StrictHostKeyChecking=no babak@$DEPLOYMENT_SERVER_HOST "  
+      docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY &&
+
+      export COMPOSE_PROJECT_NAME=$MICROSERVICE &&
+      export DC_IMAGE_NAME=$IMAGE_NAME &&
+      export DC_IMAGE_TAG=$IMAGE_TAG &&
+      export DC_APP_PORT=$APP_PORT &&
+
+      docker network create micro_service || true &&
+
+      docker-compose down &&
+      docker-compose up -d"
+  environment:
+    name: development
+    url: $APP_ENDPOINT
+
+
+deploy_frontend:
+  extends: .deploy
+  stage: deploy
+  variables: 
+    MICROSERVICE: frontend
+    SERVICE_VERSION: "1.3"   
+    APP_PORT: 3000
+  only:
+    changes:
+      - "frontend/**/**"
+
+
+deploy_product:
+  extends: .deploy
+  stage: deploy
+  variables: 
+    MICROSERVICE: product
+    SERVICE_VERSION: "1.5" 
+    APP_PORT: 3001
+  only:
+    changes:
+      - "product/**/**"
+
+
+deploy_shopping_cart:
+  extends: .deploy
+  stage: deploy
+  variables: 
+    MICROSERVICE: shopping-cart
+    SERVICE_VERSION: "1.2" 
+    APP_PORT: 3002
+  only:
+    changes:
+      - "shopping-cart/**/**"

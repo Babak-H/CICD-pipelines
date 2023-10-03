@@ -1,0 +1,64 @@
+# # we can also define variables inside a yaml file (for non-sensitive data) or make them in cicd setting
+variables:
+  IMAGE_NAME: ***_***_repo
+  IMAGE_TAG: python-app-1.0  
+
+
+stages:
+  - test
+  - build
+  - deploy
+
+
+# this is name of the job => run_tests => it will run the tests against the project code
+# each job runs inside a docker container
+run_tests:
+  stage: test
+  # we need to test the python project, so we use a python image for it
+  # don't put latest image, since it might gaet updated and not be compatible with current modules
+  image: python:3.9-slim-buster
+  # run this before running the script
+  before_script:
+    - apt-get update && apt-get install make
+  # each job MUST have a script
+  script:
+    - make test
+
+
+# this job will create the docker image (or any other artifact based on the project code)
+build_image:
+  stage: build
+  # since we want to make a docker image, we need a environment that contains docker insdide it
+  # docker in docker :)
+  image: docker:20.10.16 # docker client
+  # extra container inside the job
+  services:
+    - docker:20.10.16-dind # docker daemon
+  variables:
+    # we need this certificate so both containers can use it to communicate
+    DOCKER_TLS_CERTDIR: "/certs"
+  # need to login before pushing the image
+  before_script:
+    - docker login -u $REGISTERY_USER -p $REGISTERY_PASS
+  # create the image and then push it to dockerhub
+  script:
+    - docker build -t $IMAGE_NAME:$IMAGE_TAG .
+    - docker push $IMAGE_NAME:$IMAGE_TAG 
+
+
+# deployment runs after successful build, to upload the created artifact/image into the server
+deploy:
+  stage: deploy
+  # we have saved ssh public key as a file in variables, here we set it to be visible to all users
+  before_script:
+    - chmod 400 $SSH_KEY
+  # login to the server host through ssh key, 
+  # when inside the host run the commands inside ""
+      # login to dockerHub using our user/pass
+      # stop and remove any previous containers if they exist and clear port
+      # run docker image on port 5000 in detached mode
+  script:
+    - ssh -o StrictHostKeyChecking=no -i $SSH_KEY root@xxxxxxxxx "
+        docker login -u $REGISTRY_USER -p $REGISTRY_PASS && 
+        docker ps -aq | xargs docker stop | xargs docker rm &&
+        docker run -d -p 5000:5000 $IMAGE_NAME:$IMAGE_TAG"

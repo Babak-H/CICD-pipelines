@@ -1,0 +1,6 @@
+version: "3.3"
+services:
+  app:
+    image: ${IMAGE_NAME}:${IMAGE_TAG}
+    ports:
+      - ${DC_APP_PORT}:3000

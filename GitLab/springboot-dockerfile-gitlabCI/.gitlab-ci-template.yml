@@ -1,0 +1,103 @@
+# gitlab-template
+image: maven:latest
+
+stages:
+  - build
+  - test
+  - source-code-analyze
+  - assemble
+  - docker
+  - deploy
+
+before_script:
+  - mkdir -p installed_deps
+
+variables:
+  MAVEN_CLI_OPTIONS: "--batch-mode" # non-interactive mode
+  CACHE_PATH: "installed_deps/"
+  JUNIT_REPORT_PATH: "./target/surefire-reports/*.xml"
+  ASSEMBLE_ARTIFACT_PATH: "./target/*.jar" # /builds/rim/java/transporter-notification/target/
+  IMAGE_NAME: ""
+  VERSION: ""
+
+cache:
+  paths:
+    - $CACHE_PATH
+  policy: pull-push
+
+build:
+  stage: build
+  script:
+    - echo "Compiling the code..."
+    - mvn $MAVEN_CLI_OPTIONS compile
+    - echo "Compile complete."
+
+unit-test:
+  stage: test
+  script:
+    - echo "Running unit tests"
+    - mvn $MAVEN_CLI_OPTIONS test
+  artifacts:
+    when: always
+    reports:
+      junit:
+        - $JUNIT_REPORT_PATH
+
+checkstyle:
+  stage: source-code-analyze
+  script:
+    - echo "running checkstyle tests..."
+    - mvn $MAVEN_CLI_OPTIONS checkstyle:checkstyle
+
+pmd:
+  stage: source-code-analyze
+  script:
+    - echo "running pmd tests..."
+    - mvn $MAVEN_CLI_OPTIONS pmd:pmd
+
+assemble-jar-file:
+  stage: assemble
+  environment: staging
+  script:
+    - echo "Deploying application..."
+    - mvn $MAVEN_CLI_OPTIONS package -Dmaven.test.skip
+  artifacts:
+    paths:
+      - $ASSEMBLE_ARTIFACT_PATH
+
+build-push-image:
+  rules:
+    - if: $CI_COMMIT_BRANCH == "master" || $CI_COMMIT_BRANCH == "main"
+      when: always
+    - when: never
+  stage: docker
+  tags:
+    - privileged
+  services:
+    - name: docker:20.10.16-dind
+      command:
+        - "--registry-mirror"
+        - "https://gitlab-cache-docker-all-v.repository.intranet.my-corp.com"
+        - "--registry-mirror"
+        - "https://mirror.gcr.io"
+  image: docker:20.10.16-dind
+  script:
+    - docker build -t $IMAGE_NAME:$VERSION .
+    - docker login $CI_REGISTRY -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD
+    - docker push $IMAGE_NAME:$VERSION
+
+deploy-to-k8s:
+  rules:
+    - if: $CI_COMMIT_BRANCH == "master" || $CI_COMMIT_BRANCH == "main"
+      when: always
+    - when: never
+  stage: deploy
+  image:
+    name: bitnami/kubectl:1.21-debian-11
+    entrypoint: [""]
+  before_script:
+    - export KUBECONFIG=$KUBE_CONFIG
+    - kubectl create secret docker-registry my-reg-key --docker-server=$CI_REGISTRY --docker-username=$CI_DEPLOY_USERNAME --docker-password=$CI_DEPLOY_PASSWORD -n rbg-dev --dry-run=client -o yaml | kubectl apply -f -
+    - kubectl create secret generic my-ssh-key --from-file=id_rsa=$SSH_KEY -n rgb-dev
+  script:
+    - echo "applying kubernetes template"

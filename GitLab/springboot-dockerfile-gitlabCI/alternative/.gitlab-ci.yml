@@ -1,0 +1,97 @@
+stages:
+    - ibuild
+    - devdeploy
+    - sitdeploy
+    - uatdeploy
+    - proddeploy
+
+
+Build Job: 
+    image: adoptopenjdk/maven-openjdk11
+    stage: ibuild 
+    variables:
+        MAVEN_OPTS: "-Xmx512m -Xms256m"
+    script:
+        - mvn -v
+        - java -version
+        - "mvn install -e deploy -Dmaven.test.skip=true -Dspring.profiles.active=primary -DilinkUserName=$ILINK_USER -Dilinkpassword=$ILINK_PWD -s settings.xml"
+        #- "mvn clean install"
+        - cp $CI_PROJECT_DIR/agent-server/target/agent-server*.jar target        
+        - cd target 
+        - mv linking-app-1.5.0-SNAPSHOT.jar ilink-webapp-service.jar
+    artifacts:
+        paths:
+        - target
+        expire_in: 1 week   
+    retry:
+        max: 2
+    when: manual
+    allow_failure: false
+
+
+Deploy Dev Env Job: # To deploy into Development
+    artifacts:
+        paths:
+        - target
+        expire_in: 1 week   
+    stage: devdeploy
+    when: manual
+    only:
+     - main
+    before_script:
+     - eval $(ssh-agent) 
+     - echo "$SSH_KEY" | tr -d '\r' | ssh-add -
+    script:
+     - scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -r target/ilink-webapp-service.jar  $DEV_1
+     - scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -r target/ilink-webapp-service.jar  $DEV_2
+
+
+Deploy SIT Env Job: # To deploy into Int
+    artifacts:
+        paths:
+        - target
+        expire_in: 1 week   
+    stage: sitdeploy
+    when: manual
+    only:
+     - main
+    before_script:
+     - eval $(ssh-agent) 
+     - echo "$SSH_KEY" | tr -d '\r' | ssh-add -
+    script:
+     - scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -r target/ilink-webapp-service.jar  $SIT_1
+     - scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -r target/ilink-webapp-service.jar  $SIT_2
+
+
+Deploy UAT Env Job: # To deploy into val
+    artifacts:
+        paths:
+        - target
+        expire_in: 1 week   
+    stage: uatdeploy
+    when: manual
+    only:
+     - main
+    before_script:
+     - eval $(ssh-agent) 
+     - echo "$SSH_KEY" | tr -d '\r' | ssh-add -
+    script:
+     - scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -r target/ilink-webapp-service.jar  $UAT_2
+     - scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -r target/ilink-webapp-service.jar  $UAT_4
+
+
+Deploy Prod Env Job: # To deploy into Int
+   artifacts:
+       paths:
+       - target
+       expire_in: 1 week   
+   stage: proddeploy
+   when: manual
+   only:
+    - main
+   before_script:
+    - eval $(ssh-agent) 
+    - echo "$SSH_KEY" | tr -d '\r' | ssh-add -
+   script:
+    - scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -r target/ilink-webapp-service.jar  $PRD_1
+    - scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -r target/ilink-webapp-service.jar  $PRD_2
