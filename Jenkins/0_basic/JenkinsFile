@@ -1,0 +1,75 @@
+def gv
+CODE_CHANGES = getGitChanges()  // define the logic here...
+
+pipeline {
+    agent any 
+
+    parameter {
+        string(name: 'VERSION', defaultValue: '', description: 'version to deploy to production')
+        choice(name: 'VERSION', choices: ['1.1.0', '1.2.0', '1.3.0'], description: '')
+        booleanParam(name: 'executeTests', defaultValue: true, description: '')
+    }
+
+    // any variable you define here, will be available in all stages of the code
+    environment {
+        NEW_VERSION = '1.3.0'
+        // this variable comes from jenkins, based on the id of the credential that you created there
+        SERVER_CREDENTIALS = credentials('server_credentionals_id')
+    }
+
+    // tools should be installed on jenkins before using them here
+    tools {
+        maven 'Maven'
+    }
+
+    stages {
+        // load a groovy script into this script and use its functions here
+        stage("init") {
+            steps {
+                gv = load "script.groovy"
+            }
+        }
+
+        stage("build") {
+            when {
+                expression {
+                    params.executeTests == true
+                }
+            }
+            steps {
+                script {
+                    gv.buildApp()
+                }
+                
+                echo "building the application..."
+                echo " building version ${NEW_VERSION}"
+                sh "mvn install"
+            }
+        }
+        
+        stage("test") {
+            // this step will only execute when the branch name is "dev"
+            when {
+                expression {
+                    BRANCH_NAME == 'dev' || BRANCH_NAME == 'master'
+                }
+            }
+            steps {
+                echo "testing the application..."
+            }
+        }
+        
+        stage("deploy") {
+            // this step will only execute when there is actually some change in the code base
+            when {
+                expression {
+                    CODE_CHANGES == true
+                }
+            }
+            steps {
+                echo "deploying the application on version ${VERSION}"
+                echo "deploying with ${SERVER_CREDENTIALS}"
+            }
+        }
+    }
+}

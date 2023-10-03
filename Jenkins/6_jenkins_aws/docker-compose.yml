@@ -1,0 +1,13 @@
+version: '3.8'
+services:
+  java-maven-app:
+  # this value comes from server-cmds file
+      image: ${IMAGE}
+      ports:
+        - 8080:8080
+  postgres:
+    image: postgres:13
+    ports:
+      - 5432:5432
+    environment:
+      - POSTGRESS_PWD

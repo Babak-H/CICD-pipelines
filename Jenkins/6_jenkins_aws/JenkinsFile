@@ -1,0 +1,54 @@
+
+pipeline {
+    agent any 
+    tools {
+        maven 'maven-3.6'
+    }
+
+    stages {
+        stage("test") {
+            steps {
+                script {
+                    echo "testing the app..."
+                    // this image name can change based on version incrementation
+                    env.IMAGE_NAME = "nanajanashia/demo-app:java-maven-1.0"
+                }
+            }
+        }
+    
+
+        stage("build") {
+            steps {
+                script {
+                    echo "building the app..."
+                }
+                
+            }
+        }
+
+        stage("deploy") {
+            steps {
+                script {
+                    echo "deploying image to EC2..."
+
+                    // //simple Dockerfile for only two containers
+                    // def dockerCmd = 'docker run -p 3000:3080 -d kimsungbabak/docker-node-app:1.0.0'
+                    // sshagent(['ec2-server-key']) {
+                    //     sh "ssh -o StrictHostKeyChecking=no ec2-user@3.122.239.45 ${dockerCmd}"
+                    // }
+
+                    // docker-compose file
+                    def shellCmd = "bash ./server-cmds.sh ${IMAGE_NAME}"
+                    def ec2Instance = "ec2-user@3.122.239.45"
+                    sshagent(['ec2-server-key']) {
+                        // copy docker-compose yaml file amd shell script into the server
+                        sh "scp server-cmds.sh ${ec2Instance}:/home/ec2-user"
+                        sh "scp docker-compose.yml ${ec2Instance}:/home/ec2-user"
+                        sh "ssh -o StrictHostKeyChecking=no ${ec2Instance} ${shellCmd}"
+                    }
+                }
+
+            }
+        }
+    }
+}

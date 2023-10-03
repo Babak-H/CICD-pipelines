@@ -1,0 +1,40 @@
+pipeline {
+    agent any
+    tools { 
+        maven 'maven-3.6'
+    } 
+    stages {
+        
+        stage("build-package") {
+            steps {
+                script {
+                    echo "building the package..."
+                    sh 'mvn package'
+                }
+            }
+        }
+
+        stage("build-image") {
+            steps {
+                script {
+                    echo "building the image..."
+                    withCredentials([usernamePassword(credentialsId: 'docker-hub-repo', usernameVariable: 'USER', passwordVarialbe: 'PASS')]) {
+                        // we should have the docker file here in the repo to build from it
+                        sh 'docker build -t *****/maven-test-app:2.0 .'
+                        sh "echo $PASS | docker login -u $USER --password-stdin "
+                        sh "docker push ******/maven-test-app:2.0"
+                    }
+                }
+            }
+        }
+
+        stage("deploy") {
+            steps {
+                script {
+                    echo "deploying the app..."
+                }
+            }
+        }
+
+    }
+}

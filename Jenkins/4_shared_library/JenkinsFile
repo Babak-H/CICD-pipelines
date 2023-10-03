@@ -1,0 +1,36 @@
+// import the shared library
+@Library('jenkins-shared-library')
+
+pipeline {
+    agent any 
+    tools {
+        maven 'maven-3.6'
+    }
+
+    stages {
+        stage("build jar") {
+            steps {
+                script {
+                    buildJar()
+                }
+            }
+        }
+    }
+
+    stages {
+        stage("build image") {
+            steps {
+                // call the groovy function with parameter of docker image name
+                buildImage 'kimsungbabak/maven-test-app:3.0'
+            }
+        }
+    }
+
+    stages {
+        stage("deploy") {
+            steps {
+                echo "deploying...."
+            }
+        }
+    }
+}
