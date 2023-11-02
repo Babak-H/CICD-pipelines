@@ -370,3 +370,8 @@ git remote add origin ssh://user@host:1234/srv/git/example   # here on port 1234
 # Type 'Shell' in command palette
 # Select Shell Command: 'Install code in PATH'
 # Now open your terminal type: $ code .
+
+
+# *** How to update feature-branch with master branch when still developing it? ***
+# here we can also use merge or rebase, but instead of merging feature to master, we can merge master To feature branch and add it's changes to our branch. rebase will do same thing but will add all the different commits 
+# of the master to our commits.
