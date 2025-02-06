@@ -1,0 +1,1050 @@
+babak.habibnejadgohardani@jpmorgan.com
+D645581
+MoeMoe1990!1369!
+
+zoom page: https://jpmchase.zoom.us/j/6913031056
+
+SID = Standard ID
+FID = Federated ID
+EVP = Enterprise Password Vault
+TM = thought machine Vault
+Vault = thought machine Vault
+SA = Service Account
+
+TM Vault
+D645581
+
+
+TM portal login
+username: babak.habibnejadgohardani
+pass: MoeMoe1990!!
+
+
+*** INCIDENTS SHOULD BE RESOLVED AFTER YOU DO THEM ***
+*** ChangeRequest should be set to implement => review after you do them ***
+*** add start and end of each change at PUBLIC:ICB Ledger:General group ***
+
+**** EVERYDAY ****** 
+
+git fetch origin
+git rebase origin/master
+
+**** EVERYDAY ****** ^^^^^^
+
+
+* core-hault : it means hashicorp vault, to not be confused with our vault
+
+* breakglass is a bastionhost instance EC2 on AWS that can access and edit the production instances.
+
+- We work on SRE-core (related to ledger of TM value, rewards and transaction systems), We maintain, upgrade and extend TM vault ledger. 
+- Users go through Active Directory when they login to the system and then go to the servers on AWS
+- Vault is run on AWS server through EKS cluster, 400 pods, 10 nodes, around 40 on each node
+
+SealID = the id we use in Kubernetes namespaces to specify that this resource belongs to specific group (our project) and not a third-party tool (like gremlin)
+
+MIN = in-bound mediation account
+MOUT = out-bound mediation account
+LOB = Line Of Business
+
+Production Freeze = no changes to be applied to production environment during this period
+
+
+Go links
+go/awsconsole : sso link for aws console
+go/snow : service now
+go/dlogs, go/ilogs, go/elogs, go/nlogs ,go/plogs : link for elastic/kibana environments
+go/myattendence : WFH related stuff
+go/concur : get money from home equipment
+go/publiccloudsre  :
+go/snow : for change management
+go/concur : for getting expanses
+go/kafkadocs : Kafka documentation
+go/w2w : time management
+go/psp-bg : breakglass password access
+go/icbharness : harness cicd access
+
+ctrl+A => go to start of line in Terminal
+ctrl+E => go to end of line in Terminal
+
+
+clusters in Dcore/Icore/Ecore/Ncore:
+dn-dcore
+dn-dcore-data
+dn-dcore-vault (this is our main cluster)
+
+clusters in nSHS:
+dn-nshs
+
+clusters in Pcore:
+dn-pcore
+dn-pcore-data
+dn-pcore-vault
+
+idempotent = Idempotence is the property of certain operations in mathematics and computer science whereby they can be applied multiple times without changing the result beyond the initial application. => doing something several times or only once won't change the results.
+
+tail /var/log/messages
+
+JWT = Json Web Token
+BAU = Business As Usual
+
+Switch to remote branch on local
+> git branch -v -a
+> git switch -c test origin/test
+
+How to access Kubernetes cluster from Terminal:
+> pcl aws -s 
+> enter Password
+> enter RSA
+> press “s” then space and then type name of environment to search it. (Press enter to find)
+> aws eks update-kubeconfig --name dn-dcore-vault --region eu-west-1
+> kubectl get ns
+> kubectl get deployment contract-post-posting-processor -n 105250-core-vault
+> kubectl get configmap contract-post-posting-processor-config-contracts-pkg-69fd415127 -n 105250-core-vault -o yaml
+
+describe cluster:
+aws eks --region us-east-1 describe-cluster --name <CLUSTER_NAME> --query cluster.status
+
+*** Access Database Postgres ***
+
+D,I,E
+1. go to RDS and find the db, go to config and find the link to secret manager
+2. go to secret manager and get user/pass
+3. go to PGAdmin from core-vault bitbucket page and create new server and connect via user/pass
+4. in ecore server name is like this: tm-vault-green-cluster.cluster-ctprhfb1fjir.eu-west-1.rds.amazonaws.com
+
+N,P
+1. connect to the server via 'aws pcl -s'
+2. find the 'vault-tools-XXXX' on the '105250-vault-operators' ns
+3. exec into it and go to /scripts folder
+4. run "./connect-to-db.sh" for read queries and "./connect-to-db.sh -w" for write queries. the password will be retrieved automatically
+
+
+Kubernetes Drain:
+How to drain an Kubernetes node: You can use "kubectl drain" to safely evict all of your pods from a node before you perform maintenance on the node (e.g. kernel upgrade, hardware maintenance, etc.). Safe evictions allow the pod's containers to "gracefully terminate" and will respect the PodDisruptionBudgets you have specified.
+By default "kubectl drain" ignores certain system pods on the node that cannot be killed.
+
+> kubectl get nodes
+> kubectl drain <node name>
+> kubectl drain --ignore-daemonsets <node name>
+
+If there are pods managed by a DaemonSet, you will need to specify "--ignore-daemonsets" with kubectl to successfully drain the node.
+
+*** Change in Prod proccess **
+
+1. create a new change request: https://jpmorganchase.service-now.com/now/nav/ui/classic/params/target/change_request.do%3Fsys_id%3D1ca824e21b6ec2103d4754e8624bcb0c%26sysparm_domain%3Dnull%26sysparm_domain_scope%3Dnull%26sysparm_view%3D%26sysparm_view_forced%3Dtrue
+
+2. create a new incident with similar description: https://jpmorganchase.service-now.com/incident.do?sys_id=9c2cec6e1beec2103d4754e8624bcbaf&sysparm_view=&sysparm_domain=null&sysparm_domain_scope=null
+
+3. find correct breakglass account: https://confluence.dynamo.prd.aws.jpmchase.net/display/CPE/Break+Glass+-+%28DYN%29+AWS+FIDs
+
+4. request breakglass password: https://psp.jpmchase.net/psp-service/index.html?vaultName=HRA
+
+5. login to aws console in new incognito window with the breakglass account and generated password
+** choose this option: EMEA-PCORE-READONLY-105250-PROD
+
+6. test this lambda function to create new bastion host:  105250-0000ie-pcore-dn-pcore-data-breakglassStartUp or 105250-0000ie-pcore-dn-pcore-vault-breakglassStartUp
+
+7. ssh into the breakglass EC2 instance via Session Manager (NOT readonly) i.e: "105250-0000ie-pcore-dn-pcore-vault-breakglass-bastion"
+
+8. test this lambda function to delete created bastion hosts:  105250-0000ie-pcore-dn-pcore-data-breakglassCleanUp or 105250-0000ie-pcore-dn-pcore-vault-breakglassCleanUp
+
+* the breakglass password should work for 1-2 hours
+
+Kubernetes Disruption:
+pods do not disappear until someone(person or controller) destroys them, or there is an unavoidable hardware or system software error.
+we call these unavoidable cases "Involuntary Disruptions" to an application, examples:
+- a hardware failure of the physical machine backing the node
+- cluster admin deletes VM / instance by mistake
+- cloud provider or hypervisor failure makes VM disappear
+- kernel panic
+- node disappear from cluster due to cluster network partition
+- eviction of pod due to the node being out of resource
+
+Voluntary Disruption:
+actions initiated by application owner and those initiated by a cluster admin. 
+application owner actions:
+- deleting a deployment or other controller that manages the pod
+- updating deployment's pod template causing a restart
+- directly deleting a pod (acident)
+
+cluster admin actions:
+- draining a node for repair or upgrade
+- draining a node from a cluster to scale the cluster down
+- removing a pod from node to permit something else to fit in the node
+
+Pod Disruption Budget
+
+Kubernetes offers features to help you run highly available applications even when you introduce frequent voluntary disruptions.
+
+As an application owner, you can create a PodDisruptionBudget (PDB) for each application. A PDB limits the number of Pods of a replicated application that are down simultaneously from voluntary disruptions. 
+For example, a quorum-based application would like to ensure that the number of replicas running is never brought below the number needed for a quorum. A web front end might want to ensure that the number of 
+replicas serving load never falls below a certain percentage of the total.
+
+A PDB specifies the number of replicas that an application can tolerate having, relative to how many it is intended to have. For example, a Deployment which has a "".spec.replicas: 5" is supposed to have 5 
+pods at any given time. If its PDB allows for there to be 4 at a time, then the Eviction API will allow voluntary disruption of one (but not two) pods at a time.
+
+PodDisruptionBudget example
+Consider a cluster with 3 nodes, node-1 through node-3. The cluster is running several applications. One of them has 3 replicas initially called pod-a, pod-b, and pod-c. Another, unrelated pod without a PDB, 
+called pod-x, is also shown. Initially, the pods are laid out as follows:
+
+node-1	            node-2	          node-3
+pod-a available	    pod-b available	  pod-c available
+pod-x available		
+
+All 3 pods are part of a deployment, and they collectively have a PDB which requires there be at least 2 of the 3 pods to be available at all times.
+
+For example, assume the cluster administrator wants to reboot into a new kernel version to fix a bug in the kernel. The cluster administrator first tries to drain node-1 using the kubectl drain command. 
+That tool tries to evict pod-a and pod-x. This succeeds immediately. Both pods go into the terminating state at the same time. This puts the cluster in this state:
+
+node-1 draining	     node-2	              node-3
+pod-a terminating	   pod-b   available	  pod-c available
+pod-x terminating		
+
+The deployment notices that one of the pods is terminating, so it creates a replacement called pod-d. Since node-1 is cordoned, it lands on another node. Something has also created pod-y as a replacement for 
+pod-x.
+
+(Note: for a StatefulSet, pod-a, which would be called something like pod-0, would need to terminate completely before its replacement, which is also called pod-0 but has a different UID, could be created. 
+Otherwise, the example applies to a StatefulSet as well.)
+
+Now the cluster is in this state:
+
+node-1 draining	    node-2	          node-3
+pod-a terminating	  pod-b available	  pod-c available
+pod-x terminating	  pod-d starting	  pod-y
+
+At some point, the pods terminate, and the cluster looks like this:
+
+node-1 drained	      node-2	            node-3
+                      pod-b available	    pod-c available
+                      pod-d starting	    pod-y
+
+At this point, if an impatient cluster administrator tries to drain "node-2" or "node-3", the drain command will block, because there are only 2 available pods for the deployment, and its PDB 
+requires at least 2. After some time passes, "pod-d" becomes available.
+
+
+Find crashed pods:
+kubectl get pods -n NAMESPACE -o wide | grep crash
+
+
+> sysctl fs.inotify.max_user_instances=8192
+> sysctl fs.inotify.max_user_watches=524288
+
+lsof command
+The lsof command is an acronym for "list open files," but its potential isn't limited to just that role. It's commonly said that in Linux, everything is a file. In many ways, that's true, so a utility 
+that lists open files is actually pretty useful. The lsof utility is a robust interface for the information inside the /proc virtual filesystem.
+
+what process is using a particular directory:
+> lsof /run
+
+what files a particular process has open:
+> lsof -p 890
+
+discover what files a particular user has open:
+> lsof -u admin 
+> lsof /proc/{user-id}/fd | wc - l
+> lsof -u {user} | wc -l
+
+ulimit linux command
+The ulimit() call will get or set some limit for the calling process.
+
+Find open files limit:
+> cat /proc/sys/fs/file-max
+
+Another way:
+> ulimit -n
+
+How to increase open file limit for a user:
+> sudo vi /etc/security/limits.conf
+> <username> soft nofile 4096
+> <username> hard nofile 4096
+
+
+auditctl command
+a utility to assist controlling the kernel's audit system. The Audit system operates on a set of rules that define what is to be captured in the log files.
+The "auditctl" command allows you to control the basic functionality of the Audit system and to define rules that decide which Audit events are logged.
+
+sets the maximum amount of existing Audit buffers in the kernel:
+> auditctl -b 8192
+
+sets the rate of generated messages per second:
+> auditctl -r 0
+
+
+OIDC
+
+Open ID Connect
+
+OpenID Connect is an interoperable authentication protocol based on the OAuth 2.0 framework of specifications (IETF RFC 6749 and 6750). It simplifies the way to verify the 
+identity of users based on the authentication performed by an Authorization Server and to obtain user profile information in an interoperable and REST-like manner.
+OpenID Connect enables application and website developers to launch sign-in flows and receive verifiable assertions about users across Web-based, mobile, and JavaScript 
+clients. And the specification suite is extensible to support a range of optional features such as encryption of identity data, discovery of OpenID Providers, and session 
+logout.
+
+
+EKS OIDC => Your cluster has an OpenID Connect (OIDC) issuer URL associated with it. To use AWS Identity and Access Management (IAM) roles for service accounts, an IAM OIDC
+ provider must exist for your cluster's OIDC issuer URL.
+
+create an IAM OIDC identity provider for your cluster with eksctl:
+> cluster_name=my-cluster
+> oidc_id=$(aws eks describe-cluster --name $cluster_name --query "cluster.identity.oidc.issuer" --output text | cut -d '/' -f 5)
+> echo $oidc_id
+> aws iam list-open-id-connect-providers | grep $oidc_id | cut -d "/" -f4
+
+If it returns an empty string, create an OIDC provider:
+> eksctl utils associate-iam-oidc-provider --cluster $cluster_name --approve
+
+Operator and CRD:
+
+1. Operators make it possible to extend Kubernetes functionality to stateful applications as well, not just stateless applications. And that alone is an important advantage, because stateful cloud applications and services are much more complex to manage than stateless ones. Some stateful operators are: Prometheus Operator for the monitoring solution and Postgres Operator to manage high-availability PostgreSQL database clusters.
+2. Operators standardize manual activities and create a common and consistent approach to automation.
+3. Operators can be easily transported from one environment to another and from one project to another. This has enabled the emergence of an ecosystem with many more generic Operators that can be downloaded, configured, and used for different projects without the need to develop them in-house. Later, we will see which are the most popular hubs for finding generic
+
+The Kubernetes project defines “Operator” in a simple way: “Operators are software extensions that use custom resources to manage applications and their components“. In other words, using Operators enables us 
+to view an application as a single object that exposes only the adjustments that make sense for the application, instead of a collection of primitives (such as Pods, Deployments, Services, or ConfigMaps).
+they are called “native Kubernetes applications“, and this definition can also be viewed in another, more operational way. K8s Operators are controllers for packaging, managing, and deploying applications 
+on Kubernetes. In order to do these things, the Operator uses Custom Resources (CR) that define the desired configuration and state of a specific application through Custom Resource Definitions (CRD).
+The Operator's role is to reconcile the actual state of the application with the state desired by the CRD using a control loop in which it can automatically scale, update, or restart the application. Practically speaking, Kubernetes offers basic commands, primitives, that can be used by Operators to define more complex actions.
+
+An almost infinite number of things can be automated through an Operator, however some typical operations are more common than others.
+* The ability to deploy an application on demand
+* Making a backup of an application state or restarting an application from a given backup
+* Managing the update of an application with all its dependencies including new configuration settings and necessary database changes
+* Exposing a service to applications that do not support Kubernetes APIs.
+
+Operators are typically implemented as custom controllers that extend the Kubernetes API with new resources, and provide custom logic for managing these resources. For example, a database operator might 
+create a custom resource called Database that represents a database instance, and provide custom logic for creating and managing instances of this resource.
+
+Operators are hard to create and are usually written in GO language, but we can use “Operator Framework“ or “Kubebuilder” to develop them easier.
+List of existing operators: https://artifacthub.io/packages/search
+
+1- To create a Kubernetes operator, you first define a custom resource definition (CRD) for the resource you want to manage. For example, you might define a CRD named SampleDB to represent a sample database 
+instance.
+2- Next, you write a custom controller that watches for instances of the SampleDB resource and performs actions based on changes to these resources. For example, the controller might deploy a database 
+instance when a SampleDB resource is created, or take a backup of the database when the SampleDB resource is updated.
+3- To deploy an operator, you first build the operator using the Operator SDK or another tool. Then you create a deployment in the cluster that runs the operator, and create an instance of the SampleDB 
+resource using kubectl or another tool.
+4- Once the operator is deployed and the SampleDB resource is created, the operator will begin to manage the resource. It will perform tasks such as deploying the database, taking backups, handling upgrades, 
+and simulating failure.
+How to deploy Prometheus Operator (without Helm): https://prometheus-operator.dev/docs/user-guides/getting-started/
+
+
+Break Glass
+
+Using modern cloud environments, specifically production environments, decreases the need for human access.
+It makes sense for developers to have access to Dev or Test environments, but in a properly designed production environment, everything should be automated — from deployment, and observability to self-healing. 
+In most cases, no human access is required.
+Production environments serve customers, require zero downtime, and in most cases contain customers data.
+There are cases such as emergency scenarios where human access is required.
+
+In mature organizations, this type of access is done by the Site reliability engineering (SRE) team.
+The term break-glass is an analogy to breaking a glass to pull a fire alarm, which is supposed to happen only in case of emergency.
+
+break-glass accounts should be used in emergency cases only.
+
+* 	Authentication — All access through the break-glass mechanism must be authenticated, preferred against a central identity provider, and not using local accounts
+* 	Authorization — All access must be authorized using role-based access control (RBAC), following the principle of least privilege
+* 	MFA — Since most break-glass scenarios require highly privileged access, it is recommended to enforce multi-factor authentication (MFA) for any interactive access
+* 	Just-in-time access — All access through break-glass mechanisms must be granted temporarily and must be revoked after a pre-define amount of time or when the emergency is declared as over
+* 	Approval process — Access through a break-glass mechanism should be manually approved
+* 	Auditing — All access through break-glass mechanisms must be audited and kept as evidence for further investigation
+* 	Documented process — Organizations must have a documented and tested process for requesting, approving, using, and revoking break-glass accounts
+
+AWS
+Identity Management
+Identities in AWS are managed using AWS Identity and Access Management (IAM).
+When working with AWS Organizations, customers have the option for central identity management for the entire AWS Organization using AWS IAM Identity Center — a single-sign-on (SSO) and federated identity 
+management service (working with Microsoft Entra ID, Google Workspace, and more).
+Since there might be a failure with a remote identity provider (IdP) or with AWS IAM Identity Center, AWS recommends creating two IAM users on the root of the AWS Organizations tree, and an IAM break-glass 
+role on each of the accounts in the organization, to allow access in case of emergency.
+
+Passwords for the break-glass IAM accounts must be stored in a secured vault, and once the work on the break-glass accounts is over, the passwords must be replaced immediately to avoid reuse.
+Access using break-glass IAM accounts must be temporary
+
+Auditing
+All API calls within the AWS environment are logged into AWS CloudTrail by default, and stored for 90 days.
+it is recommended to send all CloudTrail logs to a central S3 bucket, from the entire AWS Organization.
+Since audit trail logs contain sensitive information, it is recommended to encrypt all data at rest using customer-managed encryption keys and limit access to the log files to the SOC team for investigation 
+purposes.
+Audit logs stored inside AWS CloudTrail can be investigated using Amazon GuardDuty.
+
+Resource Access
+- access to EC2 instances, using EC2 Instance Connect or AWS Systems Manager Session Manager.
+- access to Amazon EKS nodes, using AWS Systems Manager Agent (SSM Agent).
+- access to Amazon ECS container, using AWS Systems Manager, and for debugging purposes using Amazon ECS Exec.
+- secured access to Amazon RDS, using AWS Systems Manager Session Manager.
+
+https://github.com/awslabs/aws-break-glass-role
+
+1. Start session on RSAM then close it
+2. Join EPVAllUsers group (add member, via SID, creates RSAM request that manager should approve)
+3. Select proper consumer bank group to join (same process as above)
+4. Choose the account based on your EPV group
+5. Go/psp-bg to get password for the account, retrieve temp password
+
+https://confluence.dynamo.prd.aws.jpmchase.net/pages/viewpage.action?pageId=531504981
+https://confluence.dynamo.prd.aws.jpmchase.net/display/~e898726/TM+Ops+UI
+https://confluence.dynamo.prd.aws.jpmchase.net/pages/viewpage.action?pageId=538242411
+https://confluence.dynamo.prd.aws.jpmchase.net/display/~w607904/2.+Key+Vault+Resources
+https://confluence.dynamo.prd.aws.jpmchase.net/pages/viewpage.action?pageId=317184309
+https://confluence.dynamo.prd.aws.jpmchase.net/display/CPE/Break+Glass+-+AWS+Harness+Bootstrap+FIDs
+
+
+
+Metrics Server
+
+The Kubernetes Metrics Server is an aggregator of resource usage data in your cluster, and it isn't deployed by default in Amazon EKS clusters.
+
+The Kubernetes Metrics Server is a resource metrics monitoring tool for Kubernetes. The Kubernetes Metrics Server measures CPU and memory usage across the Kubernetes cluster. This metrics-server collects 
+metrics and then shows resource usage statistics for your cluster so that you can monitor resource usage for each node and also for each pod.
+You can monitor your resource usage with simple commands using the top command like "kubectl top pods" and "kubectl top nodes".
+
+Install metrics server on cluster:
+> kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+
+Check that it works:
+> kubectl get deployment metrics-server -n kube-system
+> kubectl top nodes
+> kubectl top pods
+
+https://github.com/kubernetes-sigs/metrics-server
+** All secrets are saved in AWS SECRET MANAGER
+** PI should not be visible in application logs
+
+
+Kubernetes Certificate Authority:
+In Kubernetes, a Certificate Authority (CA) is an entity that issues digital certificates. Digital certificates are used to create secure connections between services within a Kubernetes cluster and to 
+clients accessing those services. The CA is responsible for signing these certificates, which means it verifies the identity of the entity requesting the certificate and vouches for that entity's identity.
+Kubernetes provides a certificates.k8s.io API, which allows you to manage TLS certificates in your cluster. This API lets you provision TLS certificates signed by a CA that you control, thereby establishing 
+trust between various components of your Kubernetes system, such as services, pods, and nodes.
+
+Here are some key points about Kubernetes CAs:
+* Creating a CA: You can create a CA by generating a signing certificate. Tools like cfssl can be used to generate the CA key and certificate files (ca-key.pem and ca.pem)
+* Using the CA: The CA is used to issue certificates that are used for various purposes, such as securing communication between Kubernetes components, authenticating clients, and issuing certificates 
+for service accounts.
+* Certificate Files: In a typical Kubernetes setup, the CA certificate (ca.pem) and the private key (ca.key) are stored in the "/etc/kubernetes/ca/" directory. These files are used by various components 
+to validate and sign certificates 
+* Certificate Signing Requests (CSR): To issue a certificate, a Certificate Signing Request (CSR) is created. The CSR is a block of encoded text that is given to the CA, who uses it to create a certificate 
+for the requester. In Kubernetes, you can create a CSR and approve it to get a certificate
+* Automating Certificate Management: Kubernetes provides mechanisms to automate the management of certificates using its API. This includes the ability to create, approve, and manage CSRs programmatically
+
+In Terraform:
+    provider "kubernetes" {
+      host                   = module.primary.cluster_endpoint
+      cluster_ca_certificate = base64decode(module.primary.cluster_certificate_authority_data.data)
+      exec {
+        api_version = "client.authentication.k8s.io/v1beta1"
+        command     = "aws"
+        args = ["eks", "get-token", "--cluster-name", module.primary.cluster_name]
+      }
+    }
+
+"base64decode" is used to decode the CA certificate data, which is often base64-encoded when retrieved from AWS. The host attribute is set to the EKS cluster's endpoint, and the exec block is used to 
+execute the "aws eks get-token" command to obtain an authentication token for the Kubernetes API server.
+
+we don't have access to most of the action verbs in k8s in PCORE, you still have access to the AWS console
+You can use readonly bastion to get reosurses, But still cannot describe, exec
+
+
+
+Kafka:
+
+> kafka-acls --bootstrap-server $BOOTSTRAP_SERVER:9092 --command-config ~/connect.properties --add --resource-pattern-type prefixed --allow-host '*' --allow-principal User:vault-operator --topic "scheduler." --operation Describe --operation Read --operation Write
+
+The command you've provided is using the "kafka-acls" tool to manage Access Control Lists (ACLs) in Kafka. Here's what each part of the command is doing:
+* kafka-acls: This is the Kafka Authorization management CLI used for managing ACLs
+* --bootstrap-server $BOOTSTRAP_SERVER:9092: This specifies the address of the Kafka broker to connect to
+* --command-config ~/connect.properties: This points to a properties file that contains the configuration settings for the command
+* --add: This flag indicates that you are adding a new ACL
+* --resource-pattern-type prefixed: This specifies that the resource pattern will be treated as a prefix, meaning it will match any resource that starts with the given pattern
+* --allow-host '*': This allows access from any host
+* --allow-principal User:vault-operator: This specifies the principal (user or application) that is being granted access
+* --topic "scheduler.": This is the prefix of the topic names that the ACL will apply to
+* --operation Describe --operation Read --operation Write: These specify the operations that the principal is allowed to perform on the resources. In this case, the principal can describe, read, and write to resources that match the prefix "scheduler."
+
+=> the command is adding an ACL that allows the user" vault-operator" to describe, read, and write to any topic that starts with the prefix "scheduler." from any host.
+Rewrite
+
+
+kafka command to list all users:
+> kafka-acls --bootstrap-server $BOOTSTRAP_SERVER:9092 --command-config ~/connect.properties --list --principal User:<principal-name>
+
+Check if principal user has access to topics
+> kafka-acls --bootstrap-server $BOOTSTRAP_SERVER:9092 --command-config ~/connect.properties --list --principal User:<principal-name> --topic <topic-name>
+
+Access hashicorp vault secret on hault namespace:
+> export K8T=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+
+export VTOKEN=$(curl -k -s --request POST --data '{"jwt": "'$K8T'", "role": "vault-operator-role"}' https://hault.105250-core-hault.svc.cluster.local:8200/v1/auth/kubernetes/login | jq -r '.auth.client_token')
+> curl -k -s -X GET -H "X-Vault-Token:$VTOKEN" https://hault.105250-core-hault.svc.cluster.local:8200/v1/secret/dev/root-db-secrets
+
+accessing kafka-toolkit:
+
+> kubectl get pod -n 105250-kafka 
+> kubectl get pod core-kafka-toolkit-85f44bdd68-jqxc9 -n 105250-kafka 
+> kubectl exec -it core-kafka-toolkit-85f44bdd68-jqxc9 -n 105250-kafka -- bash 
+> ktl | grep vault.dummy.cg.placeholder 
+> ktl | grep vault.core_api.v1.accounts.account_schedule_job_execution_failure
+
+in each environment we have core-kafka-toolkit pod running inside "105250-kafka" namespace, inside it we can run kafka cli commands directly. 
+ktl is same as ./bin/kafka-topics.sh -bootstrapserver=      -list and lists all existing topics
+
+topic-from-crd file contains topics that are available from running 
+> kubectl get kt -n 105250-core-vault
+
+Terraform update model: 0.11 => 0.13 => 1.0.7
+Back up => run again on backup branch to re-create old infra
+
+get current aws user configured in aws cli:
+> aws sts get-caller-identity
+
+
+kubectl get --raw "/apis/custom.metrics.k8s.io/v1beta1/namespaces/<VAULT_NS>/deployments.apps/<DEPLOYMENT_NAME>/max_service_consumer_group_lag" | jq
+
+kubectl get --raw "/apis/custom.metrics.k8s.io/v1beta1"
+
+
+kafka-acls --bootstrap-server $BOOTSTRAP_SERVER:9092 --command-config ~/connect.properties --list --topic __consumer_offsets
+
+
+kafka polling => Polling involves making repeated requests to a server to check for updates. However, traditional polling can be inefficient and “chatty,” leading to increased bandwidth usage. This is where long polling comes into play. Instead of the server immediately responding with a “not ready” message, it delays the response, allowing the client to check back later.
+In Kafka, long polling is instrumental for clients subscribing to topics. The consumer sends a request to check for messages in a topic, and if none are found, Kafka holds the response until new messages arrive. This ensures that clients receive updates without continuously polling the server.1
+
+install metric server: 
+helm repo add metrics-server https://kubernetes-sigs.github.io/metrics-server/
+helm upgrade --install metrics-server metrics-server/metrics-server
+
+install kube-state-metrics:
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm repo update
+helm install kubestatemetrics prometheus-community/kube-state-metrics
+
+install openlens:
+brew install --cask openlens
+
+Once installed, open OpenLens and go to Catalog --> Clusters
+Choose your cluster
+Poke around OpenLens.
+
+
+webhooks => A webhook is an HTTP-based callback function that allows lightweight, event-driven communication between 2 application programming interfaces (APIs). Webhooks are used by a wide variety of web apps to receive small amounts of data from other apps, but webhooks can also be used to trigger automation workflows in GitOps environments.
+To set up a webhook, the client gives a unique URL to the server API and specifies which event it wants to know about. Once the webhook is set up, the client no longer needs to poll the server; the server will automatically send the relevant payload to the client’s webhook URL when the specified event occurs.
+In this context, the git repository plays the role of the server app, while the desired state engine—which manages the state of infrastructure—plays the role of the client app. Webhooks can be used to notify the desired state engine every time a change is made in the git repository. If a piece of code is updated and pushed to the repository, this event will trigger the webhook. The repository then automatically sends the payload to the desired state engine’s webhook address, informing it of the code change.
+
+
+
+    provider "aws" {
+      version = "~> 2.70.0"
+      region = "${var.region}"
+
+      /*
+      In the provided Terraform AWS provider configuration code, assume_role is used to specify the details for assuming an AWS Identity and Access Management (IAM) role.
+       This is a way to obtain temporary security credentials that allow the Terraform provider to make AWS API calls with the permissions granted to the assumed role.
+       This is particularly useful for cross-account access, where you might need to manage resources in a different AWS account than the one your Terraform provider is
+       configured to use by default.
+      The assume_role block within the AWS provider configuration includes:
+
+      role_arn: This specifies the Amazon Resource Name (ARN) of the IAM role to assume. The ARN uniquely identifies the role across AWS. This is a required parameter
+      for assuming a role.
+      */
+      assume_role {
+        role_arn = "${var.assume_role}"
+      }
+    }
+
+
+
+
+        {
+            "Sid": "AllowCloudTrailProcess"
+            "Effect": "Allow",
+            "Action": [
+                "cloudtrail:StartLogging",
+                "cloudtrail:StopLogging",
+                "cloudtrail:CreateTrail",
+                "cloudtrail:DeleteTrail",
+                "cloudtrail:DescribeTrails",
+                "cloudtrail:GetTrail",
+                "cloudtrail:GetTrailStatus",
+                "cloudtrail:GetEventSelectors",
+                "cloudtrail:LookupEvents"
+                "cloudtrail:StartLogging",
+                "cloudtrail:StopLogging",
+                "cloudtrail:ListPublicKeys",
+            ],
+            "Resource": "*"
+        }
+
+
+
+creating CloudTrail: AccessDeniedException: User: arn:aws:sts::279924677952:assumed-role/105250-EMEA-DCORE-INFRADEPLOYER/aws-go-sdk-1710163813771163623 is not authorized to perform: cloudtrail:CreateTrail on resource: arn:aws:cloudtrail:eu-west-1:279924677952:trail/aurora-cloudtrail because no identity-based policy allows the cloudtrail:CreateTrail action
+│ 	status code: 400, request id: e26237fb-1141-448f-ae79-d07a9c8b0c30
+
+
+
+data "aws_iam_policy_document" "aurora_kms_policy" {
+  statement {
+    sid       = "Allow IAM User Permissions"
+    effect    = "Allow"
+    actions   = ["kms:*"]
+    resources = ["*"]
+    principals {
+      identifiers = ["arn:aws:iam::${var.account_id}:root"]
+      type        = "AWS"
+    }
+  }
+  statement {
+    sid     = "Allow Amazon Cloudwatch Log to use this key"
+    effect  = "Allow"
+    actions = [
+      "kms:Encrypt*",
+      "kms:Decrypt*",
+      "kms:ReEncrypt*",
+      "kms:GenerateDataKey*",
+      "kms:Describe*"
+    ]
+    resources = ["*"]
+    principals {
+      identifiers = ["logs.eu-west-1.amazonaws.com"]
+      type        = "Service"
+    }
+    condition {
+      test     = "ArnLike"
+      variable = "kms:EncryptionContext:aws:logs:arn"
+      values   = ["arn:aws:logs:eu-west-1:${var.account_id}:*"]
+    }
+  }
+}
+
+
+*** Borrow Journey ***
+
+
+for latency metrics we only care for the latency between when user clicks something and what he gets back, not specific delays of internal services
+
+CLM   => Credit Line Manager
+CBAM  => Core Banking Account Manager , works as a core banking middle man between vault and other services
+TM    => Tought Machine Vault
+BAC   => 
+
+borrow : account creation / account upgrade / account closire => each have their own flows
+
+creation clm -> cbam
+account creation flow : clm -> cbam * requirement outcome * -> cbam -> tm -> tm -> clm kafka * done asynchronously * -> cbam -> clm (account creation confirmation)
+
+account closure flow : clm * change status * -> cbam -> close account
+                       bac -> cbam * deactivate account *
+                       cml - * credit increase /decrease * -> borrow temporal -> account closure service -> * change account status * -> cbam -> notification manager
+
+
+
+scheduler comes from TM vault
+
+borrow schedulers -> create their own topic
+    account scheduler outcome processor
+    account scheduler job processor
+    response -> contract directive
+    scheduler jobs published
+    DB execusion
+
+vault.core.contracts.journeys.account_schedule.responses
+
+
+pip3 install pipenv
+python3 -m pipenv install -r .....
+
+
+python3 -m pip install --no-binary lightgbm --config-settings=cmake.define.USE_OPENMP=OFF 'lightgbm>=4.3.0'
+
+
+python3 -m pip install poetry    
+python3 -m poetry init 
+python3 -m poetry lock                                                                                     
+python3 -m poetry install     
+python3 -m pip list
+
+python3 -m pip install pyyaml
+  
+
+/Users/D645581/.local/share/virtualenvs/prophecy-O47yary9/bin/python -m poetry show
+
+python3 -m pip install --force-reinstall -v "MySQL_python==1.2.2"
+
+
+{"file":"infrastructure/aws_account_bootstrap/hault/teller/main.go:38","func":"main.main","kind":"application","level":"info","msg":"\u0026{SecretsPath:/etc/hault ConfigPath:/etc/hault/config AppName:vault-postings-enrichment-processor VaultAddr:https://hault.105250-core-hault.svc.cluster.local:8200 VaultCACert:ca_pem HashiCorpVaultNamespace: Namespace:105250-core-vault SecretVersion:1 SecretPrefix:dev SecretKVBackend:secret AuthK8sBackend:kubernetes CSISecretMounts:{EnableCSIMount:false SecretMountPath:/etc/mount/ PathSeparator:!}}","time":"2024-05-08T11:25:02.273Z"}
+{"file":"infrastructure/aws_account_bootstrap/hault/teller/main.go:73","func":"main.main","kind":"application","level":"fatal","msg":"Error fetching authtoken: Error making API request.\n\nURL: PUT https://hault.105250-core-hault.svc.cluster.local:8200/v1/auth/kubernetes/login\nCode: 403. Errors:\n\n* permission denied","time":"2024-05-08T11:25:02.292Z"}
+
+
+1. kubectl exec -it  -n 105250-core-hault hault-0 sh : go inside hashicorp-vault pod
+2. export VAULT_SKIP_VERIFY=true
+3. export VAULT_TOKEN="" : get this token from aws console => Amazon S3/Buckets/105250-0000ie-Xcore-hault-unseal-keys/vault-root
+4. cd /tmp
+
+** open second session **
+5. kubectl get pod -n 105250-vault-operators : get name of the crown operator pod
+5. kubectl cp -n 105250-vault-operators crown-operator-XXXXX:/var/run/secrets/kubernetes.io/serviceaccount/..data/ca.crt  ./cert_vault-operator-sa : copy the certificate locally from crown operator
+6. kubectl cp -n 105250-vault-operators crown-operator-XXXXX:/var/run/secrets/kubernetes.io/serviceaccount/..data/token  ./token_vault-operator-sa : copy the token locally from crown operator
+7. kubectl cp cert_vault-operator-sa -n 105250-core-hault hault-0:/tmp/cert_vault-operator-sa -c vault  : copy cert to hashicorp vault pod
+8. kubectl cp token_vault-operator-sa -n 105250-core-hault hault-0:/tmp/token_vault-operator-sa -c vault : copy token to hashicorp vault pod
+9. kubectl exec -it vault-tools-679f85d45f-6699v bash -n 105250-vault-operators  : log into the vault-tools pod
+10. kubectl cluster-info : find what ip address the kubernetes master is running at
+
+** first session **
+11. ls : should see both token and certificate in /tmp folder
+12. export VAULT_SA_NAME=vault-operator-sa  export K8S_HOST="https://10.100.0.1:443" export SA_JWT_TOKEN=$(cat token_vault-operator-sa) export SA_CA_CRT=$(cat cert_vault-operator-sa)
+16. vi token_vault-operator-sa : go to the token and change a random character in it.
+17. echo $VAULT_SA_NAME echo $K8S_HOST echo $SA_JWT_TOKEN echo $SA_CA_CRT  : makes sure all these variables have values
+18. vault write auth/kubernetes/config \
+        token_reviewer_jwt="$SA_JWT_TOKEN" \
+        kubernetes_host="$K8S_HOST" \
+        kubernetes_ca_cert="$SA_CA_CRT"
+
+** second session **
+19. cd /tmp
+20. ls : should see vaultctl file
+21. ./vaultctl restart --context inCluster --namespace 105250-core-vault  : restart hashicorp vault
+
+22. kubectl describe pod vault-postings-enrichment-processor-56f9f4c6c9-t279c -n 105250-core-vault : check this pod, it's init-container pod must be failing
+23. kubectl logs -n 105250-core-vault vault-postings-enrichment-processor-56f9f4c6c9-t279c -c init-teller : check init-container logs to see the error
+
+
+kubectl exec -it hault-restore-0 -n 105250-core-hault bash --url="postgresql://hault-restore@cockroach-public:26257/hault-restore?sslmode=verify-full&sslrootcert=/cockroach/cdb/ca.crt&sslcert=/cockroach/cdb/client.hault.crt&sslkey=/cockroach/cdb/client.hault.key&connect_timeout=120"
+
+kubectl exec -it cockroach-client-0 -n 105250-cockroach-sql-client -- ./cockroach sql --url="postgresql://hault@cockroach-public:26257/hault?sslmode=verify-full&sslrootcert=/cockroach/cdb/ca.crt&sslcert=/cockroach/cdb/client.hault.crt&sslkey=/cockroach/cdb/client.hault.key&connect_timeout=120"
+
+/cdb $ cat tls.crt
+
+
+**** COCKROACH ****
+
+SHOW GRANTS ON DATABASE "hault-restore";
+
+GRANT ALL ON TABLE "hault-restore".vault_kv_store TO hault;
+SHOW GRANTS ON DATABASE "hault-restore".vault_kv_store;
+
+SHOW USERS;
+
+CREATE USER test_1 WITH LOGIN PASSWORD '$tr0nGpassW0rD' VALID UNTIL '2021-10-10';
+CREATE USER test_2 WITH PASSWORD NULL;
+
+REVOKE CREATE,INSERT,UPDATE ON test.customers FROM test_user;
+
+DROP USER test_user;
+
+
+
+  # tf init -backend-config=../../backends/eu-west-1/LOCAL.tfvars
+  # tf plan -var-file=./DCORE/terraform.tfvars
+  # alias tf=/usr/local/jpmc/versions/0.12.31/terraform
+
+
+*** accessing Hashicorps Vault ***
+
+kubectl get pod -n 105250-core-hault -o wide
+kubectl port-forward hault-0 8200:8200 -n 105250-core-hault
+** open new incognito window => https://127.0.0.1:8200
+** go to S3 and get the token for hault => login to hault via token
+
+
+"postgres://YourUserName:YourPassword@YourHostname:5432/YourDatabaseName"
+postgresql://[user[:password]@][netloc][:port][/dbname][?param1=value1&...]
+postgres://postgress:PASS@db-105250-000ie-dcore-tnn-core-vault-cluster:5432
+
+
+python3 blue-green-replication.py --blue-db="db-105250-0000ie-icore-tnn-core-vault-cluster" --green-db="db-105250-0000ie-icore-tnn-core-vault-cluster" --mode=grant_pg_monitor
+
+* vault-tools are in 105250-vault-operators namespace
+kubectl get pods --all-namespaces | grep vault-tool
+kubectl get pod -n 105250-vault-operators
+kubectl exec -it vault-tools-xxxx-xxxx -n 105250-vault-operators -- bash
+
+
+** How to do a change in Vault **
+
+https://confluence.dynamo.prd.aws.jpmchase.net/display/DIGPROJECT/Update+process+-+operator+based+approach
+
+1. change some value in helm-chart/vault-init, create pr
+2. run "vault_init_helm_service_deploy" pipeline on harness
+    a. chartVersion: version from current PR
+    b. installationMode: install-vault
+    c. phaseTwoContinuousReconcile: true
+    d. vaultToolsImageTag: vault-tools latest commit version
+
+
+python3 blue-green-replication.py --blue-db="db-105250-0000ie-dcore-tnn-core-vault-cluster"  --green-db="db-105250-0000ie-dcore-tnn-core-vault-cluster" --mode=grant_pg_monitor
+
+
+k get cm -A | grep otel
+k describe cm otel-gateway-conf-5kkdcbh579-namespaced-observability-56c154cbe2 -n 105250-core-vault
+k get service -A | grep otel
+k get deploy -A | grep otel
+k logs deploy/otel-collector -n 105250-core-vault
+k get po -n 105250-core-vault | grep otel
+k get cm otel-gateway-conf-fdg7dt2f9d-namespaced-observability-c547c3d65f -n 105250-core-vault -o yaml
+
+
+**********************
+what is a password or secret rotation?
+
+Password or secret rotation refers to the practice of periodically changing passwords, API keys, encryption keys, or other types of secrets used to access systems, applications, or data. This practice is a critical component of security management and helps to mitigate the risk of unauthorized access due to compromised credentials. Here are some key aspects of password or secret rotation:
+
+Why Rotate Passwords or Secrets?
+Mitigate Risk of Compromise: If a password or secret is compromised, rotating it limits the window of opportunity for an attacker to use it.
+Compliance: Many regulatory standards and security frameworks (e.g., PCI-DSS, HIPAA) require regular rotation of passwords and secrets.
+Reduce Impact of Insider Threats: Regular rotation can help minimize the risk posed by disgruntled employees or other insiders who might misuse their access.
+Limit Exposure: In case of a data breach, rotating secrets can help ensure that any exposed credentials are no longer valid.
+
+Types of Secrets to Rotate
+User Passwords: Passwords used by individuals to access systems and applications.
+API Keys: Keys used to authenticate and authorize API requests.
+Encryption Keys: Keys used to encrypt and decrypt data.
+Database Credentials: Usernames and passwords used to access databases.
+Service Account Credentials: Credentials used by applications or services to interact with other systems.
+
+Best Practices for Secret Rotation
+Automate Rotation: Use tools and scripts to automate the rotation process to reduce human error and ensure consistency.
+Use a Secret Management System: Tools like HashiCorp Vault, AWS Secrets Manager, and Azure Key Vault can help manage and rotate secrets securely.
+Set Rotation Policies: Define policies that specify how often secrets should be rotated (e.g., every 30, 60, or 90 days).
+Monitor and Audit: Keep logs of secret rotations and monitor for any unauthorized access attempts.
+Notify Stakeholders: Ensure that all relevant stakeholders are informed about the rotation schedule and any changes to secrets.
+Test Rotations: Regularly test the rotation process to ensure that it works as expected and does not disrupt operations.
+
+Challenges and Considerations
+Downtime: Ensure that the rotation process does not cause downtime or disrupt services.
+Backward Compatibility: Make sure that all systems and applications that rely on the secret are updated to use the new secret.
+Security: Ensure that the rotation process itself is secure and does not expose the new secrets.
+
+Example Tools for Secret Rotation
+HashiCorp Vault: Provides dynamic secrets, automatic rotation, and secure storage.
+AWS Secrets Manager: Automates the rotation of secrets and integrates with AWS services.
+Azure Key Vault: Manages and rotates secrets, keys, and certificates in Azure.
+
+In summary, password or secret rotation is a crucial security practice that helps protect systems and data from unauthorized access. By regularly changing credentials and using automated tools, organizations can significantly reduce the risk of security breaches.
+
+
+**********************
+what are gRPC and RPC connections?
+
+RPC (Remote Procedure Call) and gRPC (gRPC Remote Procedure Call) are both protocols used for communication between different systems, typically over a network. They allow a program to execute a procedure (subroutine) on a different address space (commonly on another physical machine) as if it were a local procedure call.
+
+RPC (Remote Procedure Call)
+
+RPC is a protocol that one program can use to request a service from a program located on another computer in a network. It abstracts the details of the network communication, making it easier for developers to write distributed applications. The key features of RPC include:
+
+Transparency: The client calls a remote procedure as if it were a local one, without needing to handle the details of the network communication.
+Simplicity: It simplifies the process of writing distributed applications by hiding the complexity of the network communication.
+Language Agnostic: RPC can be implemented in various programming languages.
+However, traditional RPC has some limitations, such as lack of support for modern data formats and protocols, and it can be less efficient in terms of performance and scalability.
+
+gRPC (gRPC Remote Procedure Call)
+
+gRPC is a modern, open-source RPC framework developed by Google. It uses HTTP/2 for transport, Protocol Buffers (protobuf) as the interface description language, and provides features such as authentication, load balancing, and more. Key features of gRPC include:
+
+HTTP/2: gRPC uses HTTP/2, which provides several advantages over HTTP/1.1, including multiplexing, flow control, header compression, and more efficient use of network resources.
+
+Protocol Buffers: gRPC uses Protocol Buffers (protobuf) for serializing structured data, which is more efficient and faster than traditional text-based formats like JSON or XML.
+
+Cross-Platform: gRPC supports multiple programming languages, making it easier to develop cross-platform applications.
+
+Streaming: gRPC supports streaming requests and responses, allowing for more complex communication patterns like bidirectional streaming.
+
+Performance: gRPC is designed for high performance, with low latency and high throughput.
+
+Comparison
+Transport Protocol: RPC can use various transport protocols (e.g., TCP, HTTP), while gRPC specifically uses HTTP/2.
+Data Serialization: Traditional RPC might use different serialization formats (e.g., JSON, XML), whereas gRPC uses Protocol Buffers.
+Performance: gRPC generally offers better performance due to its use of HTTP/2 and Protocol Buffers.
+Features: gRPC provides additional features like streaming, built-in authentication, and load balancing, which are not typically part of traditional RPC implementations.
+
+In summary, while both RPC and gRPC serve the same fundamental purpose of enabling remote procedure calls, gRPC offers a more modern, efficient, and feature-rich approach, making it a popular choice for building scalable and high-performance distributed systems.
+
+
+**********************
+
+In the context of Site Reliability Engineering (SRE) and application monitoring, throughput refers to the amount of work or data processed by a system in a given period of time. It is a key performance metric that helps assess the efficiency and capacity of a system. Throughput can be measured in various units, such as requests per second, transactions per minute, or data processed per hour, depending on the nature of the application.
+
+Importance of Throughput:
+Performance Evaluation: Throughput helps in evaluating the performance of an application or service. Higher throughput generally indicates better performance and capacity to handle more load.
+
+Capacity Planning: By understanding the throughput, teams can plan for scaling resources to meet demand, ensuring that the system can handle peak loads without degradation in performance.
+
+Bottleneck Identification: Monitoring throughput can help identify bottlenecks in the system. If throughput is lower than expected, it may indicate issues such as resource constraints or inefficient code.
+
+Service Level Objectives (SLOs): Throughput is often a component of SLOs, which are used to define the expected level of service reliability and performance.
+
+User Experience: High throughput can contribute to a better user experience by ensuring that requests are processed quickly and efficiently.
+
+In SRE, maintaining optimal throughput is crucial for ensuring that systems are reliable, scalable, and performant. Monitoring tools are often used to track throughput and other related metrics to provide insights into system health and performance.
+
+*************
+
+explain to me how DLQ monitoing works?
+
+DLQ (Dead Letter Queue) monitoring is a process used to track and manage messages that cannot be processed successfully by a message queue system. Here's how it generally works:
+
+Dead Letter Queue (DLQ) Setup:
+
+A DLQ is a special queue where messages that fail to be processed are sent. This can happen due to various reasons such as message format errors, processing logic failures, or timeouts.
+Message Routing:
+
+When a message cannot be processed by the main queue, it is automatically routed to the DLQ. This ensures that problematic messages do not block the processing of other messages.
+Monitoring Tools:
+
+Monitoring tools or dashboards are set up to keep track of the DLQ. These tools can provide insights into the number of messages in the DLQ, the reasons for failure, and the time messages have been in the queue.
+Alerting:
+
+Alerts can be configured to notify administrators or developers when the number of messages in the DLQ exceeds a certain threshold. This helps in quickly identifying and addressing issues.
+Analysis and Troubleshooting:
+
+Messages in the DLQ are analyzed to determine the cause of failure. This can involve checking message content, reviewing logs, and debugging the processing logic.
+Reprocessing:
+
+Once the issue is identified and resolved, messages can be reprocessed. This might involve moving them back to the main queue or directly processing them from the DLQ.
+Reporting:
+
+Regular reports can be generated to provide insights into the frequency and types of errors occurring, helping to improve the overall system reliability.
+By effectively monitoring the DLQ, organizations can ensure that message processing systems are robust, reliable, and capable of handling errors gracefully.
+
+
+How can we monitor Kafka topics DLQs
+
+Monitoring Kafka Dead Letter Queues (DLQs) involves several steps and tools to ensure that messages that cannot be processed are effectively managed. Here's how you can do it:
+
+Set Up DLQs:
+
+Create separate Kafka topics designated as DLQs for each main topic that requires error handling.
+Configure Producers/Consumers:
+
+Ensure that your Kafka consumers are configured to send failed messages to the appropriate DLQ. This can be done by implementing error handling logic in your consumer applications.
+Use Monitoring Tools:
+
+Utilize Kafka monitoring tools like Confluent Control Center, Prometheus, or Grafana to track the status of your DLQs. These tools can provide metrics such as message count, consumer lag, and throughput.
+Set Up Alerts:
+
+Configure alerts to notify you when the number of messages in a DLQ exceeds a certain threshold. This can be done using monitoring tools or custom scripts.
+Log Analysis:
+
+Implement logging in your consumer applications to capture details about why messages are being sent to the DLQ. This can help in diagnosing and resolving issues.
+Regular Audits:
+
+Periodically review the messages in the DLQs to understand common failure patterns and address underlying issues.
+Automated Reprocessing:
+
+Develop scripts or applications to automatically reprocess messages from the DLQ once issues are resolved. This can be done by consuming messages from the DLQ and attempting to process them again.
+Dashboard Creation:
+
+Create dashboards to visualize DLQ metrics, making it easier to spot trends and anomalies.
+By implementing these strategies, you can effectively monitor and manage Kafka DLQs, ensuring that your message processing system remains robust and reliable.
+
+*************
+
+exec inside a deployment (chooses a random pod from the deployment):
+  kubectl exec -it deploy/core-kafka-toolkit -n 105250-kafka -- bash
+
+*************
+
+The metric "kafka_server_brokertopicmetrics_fetchfromfollowerfetchrequestspersec" refers to the rate of fetch requests per second that are being served by follower replicas in a Kafka cluster. => kafka server, broker topic metrics, fetch from follower, fetch request per sec
+
+
+ALERTS{alertname="NewMessagesInMigratedPostingsBridgeDLQ", alertstate="firing", topic="vault.api.v1.postings.posting_instruction_batch.created.migrated_postings_bridge.dlq"}
+
+
+*****************
+
+*** Access Vault API via Postman ***
+
+1. import the "Core Api.postman_collection 1.json" collection file into postman (go to collections, click import and then import it there)
+2. find the endpoint that you want to access there, for example "/v1/account-updates"
+3. inside the folder, click the operation you want to do, Get, Post,...
+4. in the request page, click on 'Authorization', click 'API KEY' from drop down, then choose 'Header' from 'Add to' drop down
+5. go to 'Header' section, there should bey 'Key' section, write "X-Auth-Token" instead of default "Key"
+6. go to 'tm-ops' for respective enviornment, for example: https://tm-ops.dynamo.uat.eu-west-1.aws.jpmchase.net/customers/id for ECORE
+7. go to 'Organization Admins' => 'Service Accounts', find the SA you need.
+8. if the account is 'frozen', click 'Action', click 'change status' to 'Active', make change, click 'Action' again, then 'Refresh Token' and copy it
+9. in Postman for the value of the key 'X-Auth-Token' enter the copied value.
+10. in the link address, edit it to reflect the URL variables you want to use
+
+* base URL: https://core-api.dn-ncore-vault.dynamo.test.eu-west-1.aws.jpmchase.net/
+https://core-api.dn-icore-vault.dynamo.eng.eu-west-1.aws.jpmchase.net/
+
+
+to find a smart contract related to an account id:
+go to accounts section and search and find the account, then : Click -> Account -> Revolving Line Account->Product version there you will see all code about contract
+
+*****************
+
+Could you also enable debug logs for the vault-ledger-balances-distribution-processor deployment and leave it to run for a period of time (approx 20 mins) and then collect the logs for this service? (You can disable the debug logs after you’ve collected the logs).
+
+Enabling debug logs is done by appending --verbosity=debug to the command of the main container in the deployment k8s yaml:
+       ■ kubectl edit deployment vault-ledger-balances-distribution-processor
+       ■ add - --verbosity=debug under spec.template.spec.containers[0].command:
+       ■ Then rollout restart the deployment: kubectl rollout restart deployment vault-ledger-balances-distribution-processor
+
+Let us know how you get on and if you have any questions regarding the above.
+
+*****************
+
+** postgres table vaccuming **
+
+In PostgreSQL, table vacuuming is a maintenance operation that helps manage storage and improve database performance. The process involves cleaning up dead tuples (obsolete rows) that result from updates and deletes.
+
+1. MVCC (Multi-Version Concurrency Control): PostgreSQL uses MVCC to handle concurrent transactions. When a row is updated or deleted, the old version of the row is not immediately removed. Instead, a new version of the row is created, and the old version is marked as obsolete or "dead." This allows other transactions to continue accessing the old version until they are completed.
+2. Dead Tuples: Over time, as updates and deletes occur, the number of dead tuples in a table can increase. These dead tuples consume storage space and can lead to inefficient use of resources, as they still need to be scanned during certain operations.
+3. Vacuuming: The VACUUM command is used to reclaim storage occupied by dead tuples. It marks the space occupied by these tuples as available for future use, effectively cleaning up the table. Vacuuming also helps update the visibility map, which can improve the efficiency of index-only scans.
+
+Regular vacuuming is essential for maintaining the health and performance of a PostgreSQL database, especially in environments with frequent updates and deletes.
+
+# basic vaccum
+VACUUM;
+
+# Vacuum a Specific Table
+VACUUM my_table;
+
+# vaccum with analyze => ANALYZE option updates the statistics used by the PostgreSQL query planner, which can help improve query performance. This command vacuums and analyzes a specific table
+VACUUM ANALYZE my_table;
+
+# vaccum full => The FULL option reclaims more space by compacting the table, but it requires an exclusive lock on the table. Use this option with caution, as it can impact performance
+VACUUM FULL my_table;
+
+
+*** How to access DINFRC ***
+
+arn:aws:iam::987705244904:role/105250-EMEA-DINFRC-DEVOPSENGINEER
+aws eks update-kubeconfig --name dn-dinfrc-vault --region eu-west-1
+
+
+
+#!/bin/bash
+
+if [ "$#" -ne 3 ]; then
+    echo "Usage: $0 <namespace> <service-account-name> <role>"
+    exit 1
+fi
+
+NAMESPACE=$1
+SERVICE_ACCOUNT_NAME=$2
+ROLE=$3
+
+kubectl get namespace $NAMESPACE >/dev/null 2>&1
+if [ $? -ne 0 ]; then
+    echo "Namespace '$NAMESPACE' does not exist. please type correct namespace"
+    exit 1
+fi
+
+kubectl create serviceaccount $SERVICE_ACCOUNT_NAME --namespace $NAMESPACE
+kubectl create rolebinding sa-role-binding --role $ROLE --serviceaccount $NAMESPACE:$SERVICE_ACCOUNT_NAME --namespace $NAMESPACE
+kubectl label serviceaccount $SERVICE_ACCOUNT_NAME -n $NAMESPACE icb.jpmorgan.com/squad=ICB_Ledgers app.kubernetes.io/name=hashicorp-vault
+kubectl annotate serviceaccount $SERVICE_ACCOUNT_NAME -n $NAMESPACE eks.amazonaws.com/role-arn=arn:aws:iam::279924677952:role/105250-0000ie-dcore-core-hault
+
+CAN_I=$(kubectl auth can-i list deployments --as system:serviceaccount:$NAMESPACE:$SERVICE_ACCOUNT_NAME)
+
+if [ "$CAN_I" == "yes" ]; then
+    echo "Service account '$SERVICE_ACCOUNT_NAME' created successfully in namespace '$NAMESPACE'."
+else
+    echo "Failed to create service account '$SERVICE_ACCOUNT_NAME' in namespace '$NAMESPACE'."
+    exit 1
+fi
+
+
+Hault pipeline in Harness:
+1. run hault_k8s to create the CRD
+2. run k8s_hault_operator to create the operator that executes the CRD
