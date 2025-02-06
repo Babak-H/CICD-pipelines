@@ -1,0 +1,571 @@
+Prometheus
+
+What is Telemetry
+Telemetry in software refers to the collection of business and diagnosis data from
+the software in production and store and visualize it for the purpose of diagnosing production
+issues or improving the business
+
+How many errors and exceptions?
+what is response time?
+how many times api is called?
+how many servers?
+How many users in New York?
+
+Node Exporter
+every unix-based kernel/computer is called a Node. nide exporter is an official
+prometheus exporter for collecting metrics that are exposed by unix-based kernels (linux/ubuntu)
+
+example of metrics are CPU, disk, memory, network i/o
+Node exporter can be extended with pluggable metric collectors.
+
+prometheus should run on a seperate server or docker image than our application.
+
+Prometheus runs on port 9100 by default
+LOG (Metric, Value, Time) ==> Time series database  ==> Prometheus (Store, Query, Alert)
+The targets that we scrape via prometheus, it includes the prometheus itself
+
+
+Data Model
+
+Prometheus stores data as time series
+every time series is identified by metrics name and label
+labels are a key and value pair
+labels are optional
+
+<metric name> {key=value, key=value}
+auth_api_hit {count=1, time_taken=800}
+
+Data types in promQL
+
+Scalar : float , String
+
+Store => prometheus_http_requests_total {code="200", job="prometheus"}
+
+Query => prometheus_http_requests_total{code=~"2.*", job="prometheus"}
+
+Instant vectors => instant vector selectors allow the selection of a set of time series
+and a single sample value for each at a given timestamp
+
+only a metric name is specified
+result can be filtered by providing labels
+
+auth_api_hit 5
+auth_api_hit {count=1, time_taken=800}  1
+
+
+Range Vector => range vectors are similar to instant vectors except they select 
+a range of samples
+
+ms, s, m, h, d, w, y
+
+label_name[time_spec]
+Auth_api_hit[5m]
+
+
+operators => addition + subtraction - multiplication * division / Modulo %  Power ^
+
+Prometheus_sd_update_total
+
+scrape_sample_post_metric_relabeling - 100
+
+A          B            A+5          A+B
+M1{a} 3    M1{a} 37     M1{a} 8      M1{a} 40
+M1{b} 4    M1{b} 6      M1{b} 9      M2{b} 10 
+M1{c} 9                 M1{c} 14     -
+
+
+Comparison operators
+==  != >  <  >=  <=
+
+M1{a} 10    
+           == 10      =>   M1{a} 10
+M1{b} 4                    M1{b} Removed
+
+
+Set Binary Operator
+
+and     => both metrics should have same label
+or      => all metrics are accepted
+unless  => only different labeled metrics are chosen
+
+
+process_cpu_seconds_total  
+process_cpu_seconds_total{instance=”localhost:9182”}
+
+
+filter matchers/selectors
+                               AND
+<metric name> {filter_key=value , filter_key=value,...}
+
+=~   value on the left must match the regular expression (regex) on the right
+!~   value on the left must NOT match the regular expression (regex) on the right
+
+process_cpu_seconds_total{job!="node_exporter"}
+prometheus_http_requests_total{code=~”2.*”, job=”prometheus”}
+prometheus_http_response_size_bytes_bucket{handler~=”/static/.*”}
+
+
+Aggregation Operators
+
+aggregate the elements of a single instant vector, the result is a new instant vector with aggregated values
+
+sum
+min
+max
+avg
+count
+group => groups elements, all values in the resulting vector are equal to 1
+count_values => counts the number of elements with same values
+topk (n, vector)
+bottomk(n, vector)
+stddev => finds population standard deviation over dimentions
+srdvar  
+
+
+<Aggregation Operator> (instant vector)
+sum(node_cpu_total)
+
+<Aggregation Operator> (instant vector by <label list> )
+sum(cpu_node_total) by (http_code)
+
+<Aggregation Operator> (instant vector without <label list>)
+sum(cpu_node_total) without (http_code)
+
+
+windows_cpu_time_total
+sum(windows_cpu_time_total)
+sum(windows_cpu_time_total) by (mode)
+topk(3,windows_cpu_time_total)
+group(windows_cpu_time_total) by mode
+avg(windows_cpu_time_total)
+avg(windows_cpu_time_total) by mode
+prometheus_http_request_total offset 15m
+count(prometheus_http_requests_total offset 1h) by (code)
+
+
+functions
+absent(<instant vector>) : checks if an instant vector has any members, returns empty vector if parameter has elements
+absent_over_time(<instant vector>) : checks if an instant vector has any members, returns empty vector if parameter has elements over a period of time
+abs(<instant vector>) : -5 to 5
+ceil(<instant vector>) : 1.6 to 2
+floor(<instant vector>) : 1.6 to 1
+clamp(<instant vector>, min, max)
+
+absent(windows_cpu_cstate_seconds_total{core="x09d"})
+absent(windows_cpu_cstate_seconds_total{state="h1"} [1h])
+clamp(windows_cpu_cstate_seconds_total, 100)
+
+delta<instant vector>) => can be used over gauges
+idelta(<instant vector>) => returns the difference between first and last item
+
+delta(node_cpu_temp2[h])
+
+day_of_week(windows_cpu_time_total)
+
+
+sort(<instant vector>) : sort elements ascending order
+sort_desc(<instant vector>) : sort elements descending order
+
+sort(<instant Vector)
+sort_desc(windows_cpu_cstate_seconds_total)
+
+
+Aggregation over time
+
+avg_over_time(<range vector>) : returns the averge of items in a range over time
+sum_over_time(<range vector>)
+min_over_time(<range vector>)
+max_over_time(<range vector>)
+count_over_time(<range vector>) : returns the count of items in a range over time
+
+
+avg_over_time(<range Vector>)
+avg_over_time(windows_cpu_cstate_seconds_total{state=”c1”}[10h])
+
+
+Example prometheus queries:
+
+http_requests_total  : time series with total of http requests
+
+http_requests_total{job="apiserver", hanlder="/api/comments"}  : for job that is apiserver and handler that is /api/comments give the total http requests
+
+http_requests_total{job="apiserver", hanlder="/api/comments"}[5m]  : same as above but for the range of last 5 minutes
+
+http_requests_total{environment=~"staging|testing|development",method!="GET"}  : we can have one of several environments and method NOT "GET"
+
+prometheus_http_requests_total{code=~"2.*|4.*"}
+
+http_requests_total{job=~".*server"}  : for all jobs that end with "server" give back http_requests_total metric
+
+http_requests_total{status!~"4.."}  : select all HTTP status codes except 4xx ones
+
+rate(http_requests_total[5m]) : Return the per-second rate for all time series with the http_requests_total, measured over the last 5 minutes
+
+sum by (job) (rate(http_requests_total[5m]))  : sum up all the rates over last 5 minutes, grouping by job value
+
+rate(http_requests_total[5m])[30m:1m]  : Return the 5-minute rate of the http_requests_total metric for the past 30 minutes, with a resolution of 1 minute
+
+(instance_memory_limit_bytes - instance_memory_usage_bytes) / 1024 / 1024  : metrics with the same dimensional labels, we can apply binary operators to them and elements on both sides with the same label set will get matched and propagated to the output
+
+topk(3, sum by (app, proc) (rate(instance_cpu_time_ns[5m])))  : we could get the top 3 CPU users grouped by application (app) and process type (proc) 
+
+node_cpu_seconds_total{cpu="0"}[2m]  : show the total amount of CPU time spent over the last two minutes on cpu 0
+
+sum by (namespace) (kube_pod_info)  : total pod count per namespace
+
+sum(kube_pod_container_resource_limits{resource="cpu"}) - sum(kube_node_status_capacity{resource="cpu"})  : cpu overcommitment in the cluster
+
+sum(kube_pod_container_resource_limits{resource="memory"}) - sum(kube_node_status_capacity{resource="memory"})  : memory over commitment
+
+min_over_time(range-vector): the minimum value of all points in the specified interval
+
+min_over_time(sum by (namespace, pod)
+    (kube_pod_status_phase{phase=~"Pending|Unknown|Failed"})[15m:1m]) > 0  : Find unhealthy Kubernetes pods
+
+
+increase(v range-vector) calculates the increase in the time series in the range vector. The increase is extrapolated to cover the full time range as specified in the range vector selector, 
+so that it is possible to get a non-integer result even if a counter increases only by integer increments.
+
+increase(http_requests_total{job="api-server"}[5m])
+increase(kube_pod_container_status_restarts_total[15m]) > 3
+
+count by (namespace)(sum by (namespace,pod,container)(kube_pod_container_resource_limits{resource="cpu"}))  : total number of pods in each namespace that have cpu limiys
+
+count by (namespace)(sum by (namespace,pod,container)(kube_pod_container_info{container!=""}) unless sum by (namespace,pod,container)(kube_pod_container_resource_limits{resource="cpu"}))  : Find the number of containers without CPU limits in each namespace
+
+kube_persistentvolumeclaim_status_phase{phase="Pending"}  : Find PersistentVolumeClaim in the pending state
+
+count by (namespace)(kube_persistentvolumeclaim_status_phase{phase="Pending"})  : count them in each namespace
+
+sum(changes(kube_node_status_condition{status="true",condition="Ready"}[15m])) by (node) > 2  : find nodes that are intermittently switching between “Ready" and “NotReady" status continuously over 15 minutes
+
+sum((container_memory_usage_bytes{container!="POD",container!=""} - on (namespace,pod,container) avg by (namespace,pod,container)(kube_pod_container_resource_requests{resource="memory"})) * -1 >0 ) / (1024*1024*1024)  : Find idle memory
+
+avg(container_memory_working_set_bytes{container!="POD",container!=""}) by (namespace)  : averge memory usage by pods in each namespace
+
+sum(kube_node_status_condition{condition="Ready",status="true"})  : find number of nodes that are ready
+
+node_filefd_allocated{k8scluster="my-cluster"}  : fetch the number of allocated file descriptors for a specific Kubernetes cluster named "my-cluster".
+
+node_filefd_allocated  : This is a metric exposed by the Node Exporter, a Prometheus exporter for hardware and OS metrics. It represents the number of file descriptors currently allocated by the system
+
+
+target => an object to scrape
+
+instance => an endpoint you can scrape, 1.2.3.4:5670
+
+job => a collection of targets/instances
+
+
+
+Teams can monitor Kafka consumer lag with the consumer group script, Burrow (a Kafka monitoring companion), or generic monitoring tools and exporters:
+
+      group by (app, topic, kubernetes_namespace, consumer_group)
+                (kafka_consumer_assigned_partitions_current_gauge or kafka_consumer_batch_processing_time_bucket)
+            )
+            *
+            on(topic, kubernetes_namespace, consumer_group)
+            group_left()
+            (
+              sum by (topic, kubernetes_namespace, consumer_group)
+              (
+                label_replace(
+                  kafka_burrow_partition_lag{topic!="__consumer_offsets"},
+                  "consumer_group",
+                  "$1",
+                  "group",
+                  "(.*)"
+                )
+              )
+            )
+
+https://prometheus.dynamo.prod.eu-west-1.aws.jpmchase.net/
+https://tm-metrics.dynamo.test.eu-west-1.aws.jpmchase.net/
+
+>  group by (<lables>)
+>  <vector expr> <bin-op> on(<label list>) group_left(<label list>) <vector expr>
+>  label_replace(v instant-vector, dst_label string, replacement string, src_label string, regex string)
+
+        (
+          group by (app, topic, kubernetes_namespace, consumer_group)
+            (kafka_consumer_assigned_partitions_current_gauge or kafka_consumer_batch_processing_time_bucket)
+        )
+        *
+        on(topic, kubernetes_namespace, consumer_group)
+        group_left()
+        (
+          sum by (topic, kubernetes_namespace, consumer_group)
+          (
+            label_replace(
+              kafka_burrow_partition_lag{topic!="__consumer_offsets"},
+              "consumer_group",
+              "$1",
+              "group",
+              "(.*)"
+            )
+          )
+        ) 
+
+this example will return timeseries with the values a:c at label service and a at label foo:
+> label_replace(up{job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*")
+
+kafka_consumergroup_lag
+topk(2, kafka_consumergroup_lag{topic=~"vault.core.contracts.journeys.account_schedule.responses"})
+topk(2, kafka_consumergroup_lag{consumergroup="vault.core.accounts.account_event_processor", topic="vault.core.account.events"})
+max(kafka_consumergroup_lag) by (service)
+
+prometheus => for common kafka cluster
+tm-metrics => only for core-vault kafka
+
+
+sum by(kubernetes_namespace)(
+  increase(scheduler_job_publish_lag_seconds_count{kubernetes_cluster=~"dn-pcore-vault.*", kubernetes_namespace=~"105250-core-vault"}[$rate])
+)
+
+
+(sum(rate(database_client_statement_duration_seconds_count{app=~"$app", outcome="success", name=~"$name", operation=~"$operation", tables=~"$tables", kubernetes_cluster=~"$cluster", kubernetes_namespace=~"$namespace"}[$lookback_window])) 
+/ 
+sum(rate(database_client_statement_duration_seconds_count{app=~"$app", name=~"$name", operation=~"$operation", tables=~"$tables", kubernetes_cluster=~"$cluster", kubernetes_namespace=~"$namespace"}[$lookback_window])))
+
+
+** Kafka Metrics **
+
+UnderReplicatedPartitions => The number of under-replicated partitions across all topics on the broker. Under-replicated partition metrics are a leading indicator of one or more brokers being unavailable.
+
+IsrShrinksPerSec/IsrExpandsPerSec	=> If a broker goes down, in-sync replica ISRs for some of the partitions shrink. When that broker is up again, ISRs are expanded once the replicas are fully caught up.
+
+ActiveControllerCount => Indicates whether the broker is active and should always be equal to 1 since there is only one broker at the same time that acts as a controller.
+
+LeaderElectionRateAndTimeMs => A partition leader election happens when ZooKeeper is not able to connect with the leader. This metric may indicate a broker is unavailable.
+
+BytesInPerSec/BytesOutPerSec => The number of data brokers received from producers and the number that consumers read from brokers. This is an indicator of the overall throughput or workload in the Kafka cluster.
+
+RequestsPerSecond => Frequency of requests from producers, consumers, and subscribers
+
+CollectionCount => The total number of young or old garbage collection processes performed by the JVM
+
+CollectionTime => The total amount of time in milliseconds that the JVM spent executing young or old garbage collection processes
+
+compression-rate-avg => Average compression rate of sent batches
+
+response-rate => An average number of responses received per producer
+
+request-rate => An average number of responses sent per producer
+
+io-wait-time-ns-avg => The average length of time the I/O thread spent waiting for a socket (in ns)
+
+records-lag	=> The number of messages consumer is behind the producer on this partition
+
+records-lag-max	=> The maximum number of messages consumer is behind the producer on this partition
+
+records-consumed-rate	=> An average number of records consumed per second for a specific topic or across all topics
+
+avg-latency => The response time to a client request is in milliseconds
+
+
+sum(rate(database_client_statement_duration_seconds_count{app=~".*", outcome="success", name=~".*", operation=~".*", tables=~".*", kubernetes_cluster=~"dn-pcore-vault.dynamo.prod.eu-west-1.aws.jpmchase.net", kubernetes_namespace=~"105250-core-vault"}[7d])) 
+empty 
+
+# he increase() function, that will calculate the difference between the counter values at the start and at the end of the specified time interval. It also correctly handles counter resets during that time period
+increase(http_requests_total[24h]) # otal number of requests during a period of time (24 hours)
+
+increase(kafka_network_requestmetrics_errors_total{kubernetes_name="kafka",kubernetes_namespace=~"105250-core-vault",kubernetes_cluster=~"dn-pcore-vault.dynamo.prod.eu-west-1.aws.jpmchase.net",error!="NONE"}[7d]) > 1
+empty
+
+histogram_quantile(0.5, sum(rate(grpc_client_connection_rpc_duration_bucket{app="vault-account-processor",project="vault",kubernetes_namespace=~"105250-core-vault"}[90d])) by (le))
+0.008611345522737929
+
+sum(max(kafka_burrow_partition_lag{topic=~"vault.core.audit.creation_requests|vault.core.audit.logs|vault.core.audit.action_log.creation_requests", group=~"vault.audit.audit_processor|vault.audit.audit_l2a_processor|vault.audit.action_log_processor", kubernetes_cluster=~"dn-pcore-vault.dynamo.prod.eu-west-1.aws.jpmchase.net", kubernetes_namespace=~"105250-core-vault"}) without (instance)) by (group)
+{group="vault.audit.action_log_processor"} 0
+
+sum by (kubernetes_namespace, app, grpc_method)(rate(grpc_server_handling_seconds_count{ kubernetes_namespace=~"105250-core-vault", kubernetes_cluster=~"dn-pcore-vault.dynamo.prod.eu-west-1.aws.jpmchase.net"}[2m]))
+{app="access-control-api-grpc", grpc_method="Check", kubernetes_namespace="105250-core-vault"}  0.7968363589464569
+
+histogram_quantile(0.5, sum by (le, resource_type) (rate(data_loader_vault_resource_processing_duration_bucket{resource_type=~".*",kubernetes_cluster=~"dn-pcore-vault.dynamo.prod.eu-west-1.aws.jpmchase.net", kubernetes_namespace=~"105250-core-vault"}[90d])))
+empty
+
+sum(increase(data_loader_resources_loaded_counter{resource_type=~".*",kubernetes_cluster=~"dn-pcore-vault.dynamo.prod.eu-west-1.aws.jpmchase.net", kubernetes_namespace=~"105250-core-vault-mon"}[90d])) by (resource_type)
+empty
+
+sum by(topic, group)(max without(instance)(kafka_burrow_partition_lag{kubernetes_namespace=~"105250-core-vault", kubernetes_cluster="dn-pcore-vault.dynamo.prod.eu-west-1.aws.jpmchase.net", topic=~"vault.core.contracts.contract_notification.events", group=~".*"}))
+{group="vault.v2.core_stream_api", topic="vault.core.contracts.contract_notification.events"} 0
+
+sum by (kubernetes_namespace, processor) (rate(data_exporter_handler_process_time_attempt_seconds_count{app=~"(kernel|vault)-data-exporter", successful="false", kubernetes_cluster="dn-pcore-vault.dynamo.prod.eu-west-1.aws.jpmchase.net"}[90d]))
+empty
+
+sum by (kubernetes_namespace, host)(irate(xpl_ltm_rows_processed{app="xpl-latest-transaction-marker",project="xpl",kubernetes_namespace=~"105250-core-vault", kubernetes_cluster="dn-pcore-vault.dynamo.prod.eu-west-1.aws.jpmchase.net"}[90d]))
+empty
+
+histogram_quantile(0.5, sum(rate(XPL_Contracts_Bridge_Processor_CreateTransactionStageBatchSizeHistogram_bucket{kubernetes_cluster=~"dn-pcore-vault.dynamo.prod.eu-west-1.aws.jpmchase.net", kubernetes_namespace=~"105250-core-vault"}[90d])) by (le))
+empty
+
+sum(galley_istio_networking_destinationrules{kubernetes_cluster=~"dn-pcore-vault.dynamo.prod.eu-west-1.aws.jpmchase.net"}) / count(up{job=~"galley|istio-galley", kubernetes_cluster=~"dn-pcore-vault.dynamo.prod.eu-west-1.aws.jpmchase.net"})
+empty
+
+irate(process_cpu_seconds_total{job=~"citadel|istio-citadel", kubernetes_cluster=~"dn-pcore-vault.dynamo.prod.eu-west-1.aws.jpmchase.net"}[90d])
+empty
+
+citadel_server_authentication_failure_count{job=~"citadel|istio-citadel", kubernetes_cluster=~"dn-pcore-vault.dynamo.prod.eu-west-1.aws.jpmchase.net"}
+empty
+
+(sum(irate(container_cpu_usage_seconds_total{pod=~"istio-ingressgateway-.*",container=~"istio-proxy", kubernetes_cluster=~"dn-pcore-vault.dynamo.prod.eu-west-1.aws.jpmchase.net"}[2m])) / (round(sum(irate(istio_requests_total{source_workload=~"istio-ingressgateway", reporter=~"source", kubernetes_cluster=~"dn-pcore-vault.dynamo.prod.eu-west-1.aws.jpmchase.net"}[90d])), 0.001)/1000))
+empty
+
+sum by(topic)(rate(kafka_server_brokertopicmetrics_messagesin_total{kubernetes_name="kafka",kubernetes_namespace=~"105250-core-vault",kubernetes_cluster=~"dn-pcore-vault.dynamo.prod.eu-west-1.aws.jpmchase.net",topic!="", topic=~".*"}[90d]))
+empty
+
+count by (topic)(count by (topic, partition)(kafka_cluster_partition_replicascount{kubernetes_name="kafka",kubernetes_namespace=~"105250-core-vault",kubernetes_cluster=~"dn-pcore-vault.dynamo.prod.eu-west-1.aws.jpmchase.net", topic=~".*"}))
+empty
+
+histogram_quantile(0.5, sum(rate(PaymentOrderProcessor_request_latency_s_bucket{kubernetes_namespace=~"105250-core-vault",kubernetes_cluster=~"dn-pcore-vault.dynamo.prod.eu-west-1.aws.jpmchase.net"}[90d])) by (le))
+empty
+
+histogram_quantile(0.90, sum(rate(PaymentOrderProcessor_Completion_PublishPaymentOrderExecutionsStageDurationHistogram_bucket{kubernetes_namespace=~"105250-core-vault",kubernetes_cluster=~"dn-pcore-vault.dynamo.prod.eu-west-1.aws.jpmchase.net"}[90d])) by (le))
+empty
+
+histogram_quantile(0.5, sum(rate(PostingsProcessor_instructions_per_batch_bucket{kubernetes_namespace=~"105250-core-vault",kubernetes_cluster=~"dn-pcore-vault.dynamo.prod.eu-west-1.aws.jpmchase.net"}[90d])) by (le))
+{} 0.5000690699016823
+
+sum(increase(language_contract_executor_run_hook_run_function_type_seconds_count{app=~"contract-executor.*", hook_name=~"scheduled_code", kubernetes_namespace=~"105250-core-vault",kubernetes_cluster=~"dn-pcore-vault.dynamo.prod.eu-west-1.aws.jpmchase.net"}[90d]))
+
+project:app:oom{
+  container=~".*",
+  label_app=~".*",
+  namespace=~"105250-core-vault",
+  kubernetes_cluster=~"dn-pcore-vault.dynamo.prod.eu-west-1.aws.jpmchase.net"
+} > 1
+empty
+
+sum(rate(kafka_server_brokertopicmetrics_messagesin_total{kubernetes_name="kafka", kubernetes_namespace=~"105250-core-vault", kubernetes_cluster=~"dn-pcore-vault.dynamo.prod.eu-west-1.aws.jpmchase.net",topic="vault.api.v1.accounts.account.created"}[90d]))
+empty
+
+histogram_quantile(0.5, sum(rate(ledger_balances_accumulator_processor_db_query_duration_seconds_bucket{app="vault-ledger-balances-accumulator-processor", query="GetLiveBalances", kubernetes_namespace=~"105250-core-vault", kubernetes_cluster=~"dn-pcore-vault.dynamo.prod.eu-west-1.aws.jpmchase.net"}[90d])) by (le))
+empty
+
+sum(rate(BucketProcessor_transient_error_total{kubernetes_namespace=~"105250-core-vault", kubernetes_cluster=~"dn-pcore-vault.dynamo.prod.eu-west-1.aws.jpmchase.net"}[90d])) by (error)
+empty
+
+histogram_quantile(0.5, sum(rate(BucketProcessor_Streaming_StreamingWorkerStageTimeInQueue_bucket{kubernetes_namespace=~"105250-core-vault", kubernetes_cluster=~"dn-pcore-vault.dynamo.prod.eu-west-1.aws.jpmchase.net"}[90d])) by (le))
+empty
+
+sum(
+    up{
+        kubernetes_cluster=~"dn-pcore-vault.dynamo.prod.eu-west-1.aws.jpmchase.net",
+        service=~".*",
+        namespace=~"105250-core-vault",
+        container=~"prometheus"
+        }
+    ) by (job,service,namespace)
+empty
+
+sum(policy_engine_evaluate_policies_duration_bucket{le=~'1e-05', kubernetes_namespace=~'105250-core-vault', kubernetes_cluster=~'dn-pcore-vault.dynamo.prod.eu-west-1.aws.jpmchase.net', kubernetes_pod=~'.*'}) by (action, outcome)
+empty
+
+histogram_quantile(0.5, sum(rate(PostingsProcessor_IdempotencyStageDurationHistogram_bucket{app=~".*", kubernetes_cluster=~"dn-pcore-vault.dynamo.prod.eu-west-1.aws.jpmchase.net", kubernetes_namespace=~"105250-core-vault"}[90d])) by (le))
+empty
+
+histogram_quantile(0.5, sum(rate(postings_processor_db_query_duration_seconds_bucket{app=~".*", query="getPostingInstructionBatches", kubernetes_cluster=~"dn-pcore-vault.dynamo.prod.eu-west-1.aws.jpmchase.net", kubernetes_namespace=~"105250-core-vault"}[90d])) by (le))
+{} 0.00572714688263577
+
+sum(rate(PostingsProcessor_AccountRestrictionsStageDurationHistogram_bucket{app=~"vault-.*", kubernetes_cluster=~"dn-pcore-vault.dynamo.prod.eu-west-1.aws.jpmchase.net", kubernetes_namespace=~"105250-core-vault"}[2m]))
+empty
+
+sum(language_contract_executor_process_pool_task_count{kubernetes_cluster=~"dn-pcore-vault.dynamo.prod.eu-west-1.aws.jpmchase.net", kubernetes_namespace=~"105250-core-vault", app=~"contract-executor.*"}) by (pod)
+empty
+
+sum(rate(vault_contract_requirement_fetching_response_size_bytes_sum{kubernetes_cluster=~"dn-pcore-vault.dynamo.prod.eu-west-1.aws.jpmchase.net", kubernetes_namespace=~"105250-core-vault"}[2m]) / 
+rate(vault_contract_requirement_fetching_response_size_bytes_count{kubernetes_cluster=~"dn-pcore-vault.dynamo.prod.eu-west-1.aws.jpmchase.net", kubernetes_namespace=~"105250-core-vault"}[2m])) by (app, fetcher_type) / 1024
+empty
+
+histogram_quantile(0.95, sum(rate(contracts_engine_api_hook_step_execution_duration_bucket{app="contract-engine", hook="BulkProcessPostingInstructionBatch", hook_step="FetchPlanDetails", kubernetes_cluster=~"dn-pcore-vault.dynamo.prod.eu-west-1.aws.jpmchase.net", kubernetes_namespace=~"105250-core-vault"}[90d])) by (le))
+empty
+
+histogram_quantile(0.5, sum(rate(contracts_engine_api_executor_duration_bucket{app="contract-engine", dependency=~".*", hook="BulkProcessPostingInstructionBatch", kubernetes_cluster=~"dn-pcore-vault.dynamo.prod.eu-west-1.aws.jpmchase.net", kubernetes_namespace=~"105250-core-vault"}[90d])) by (le))
+empty
+
+
+sum(rate(http_server_requests_seconds_count{app="movemoney-card-decision-engine-service"}[1m])) by (uri)
+
+sum ((increase(http_server_requests_seconds_count{app="movemoney-card-decision-engine-service"}[30d])))
+
+sum(irate(istio_requests_total{connection_security_policy!="mutual_tls", reporter="source", destination_service_name="movemoney-issuer-processor-adapter-service"}[5m])) by (source_workload)
+
+# histogram_quantile(φ scalar, b instant-vector) => calculates the φ-quantile (0 ≤ φ ≤ 1) from a classic histogram or from a native histogram. 
+# The float samples in b are considered the counts of observations in each bucket of one or more classic histograms. Each float sample must have a label le where the label value denotes the inclusive upper bound of the bucket.
+sum by(app, uri, le) rate(http_server_requests_seconds_bucket{app="movemoney-card-decision-engine-service", uri=~"/api/.+"}[1m])
+
+# kafka_consumergroup_current_offset => latest offset that a Kafka consumer group has processed. An offset in Kafka is a unique identifier of a record within a partition. It denotes the position of the consumer in the partition. For example, if a consumer is at offset 5, it means the consumer has read records 0 through 4 and is ready to read record 5.
+# Monitoring this metric can provide valuable insights into your Kafka consumer groups' behavior and performance. For instance, if the current offset stops increasing for a particular consumer group, it might indicate that the consumers in that group are no longer processing records, which could signal a problem.
+sum(increase(kafka_consumergroup_current_offset{consumergroup="rewards-campaign-manager"}[30d]))
+
+sum(increase(kafka_consumergroup_current_offset{consumergroup="rewards-booking-engine"}[30d]))
+
+sum(increase(RMS_BATCH_COPY_PROGRESS_COUNTER_total[5m]])) by (action_id, type) > 0 
+
+sum(rate(http_server_requests_seconds_count{status!~"2.*", app=~"movemoney-card-decision-engine-service", uri=~"/api/.+"} [1m])) by (uri, pod, app, status) / ignoring(status) group_left()
+
+sum(kafka_consumergroup_lag{consumergroup=~"rewards-booking-engine"}) by (topic) 
+
+
+** alert example **
+# if any backend has more than 0.5 connection errors in duration of 5 minutes then fire an alert. this has to continue for at least 10 minutes before alert starts
+groups:
+- name: Errors
+  rules:
+  - alert: ErrorsCountIncreased
+    expr: rate(haproxy_connection_errors_total[5m]) by (backend) > 0.5
+    for: 10m
+    labels:
+      severity: page
+    annotations:
+      summary: High connection error count in {{ $labels.backend }}
+
+
+# how many 500x errors percentage
+sum(rate(http_server_requests_seconds_count{app="movemoney-payment-device-crm-service", status =~ "5.*"} [5m])) / sum(rate(http_server_requests_seconds_count{app="movemoney-payment-device-crm-service"} [5m])) * 100
+
+
+sum(rate(scheduler_db_ops_duration_bucket{le="1", type="read", kubernetes_cluster=~"dn-pcore-vault.*", kubernetes_namespace="105250-core-vault"}[5m])) by (kubernetes_namespace) /
+sum(rate(scheduler_db_ops_duration_count{kubernetes_cluster=~"dn-pcore-vault.*", type="read", kubernetes_namespace="105250-core-vault"}[5m])) by (kubernetes_namespace)
+
+# get rate of successful responses by its url and method (get, post,...) in total sum
+histogram_quantile(0.95, sum(rate(http_client_requests_seconds_bucket{app="borrow-line-manager", client_name=~"corebanking-account-manager.*", status=~"2.*"}[$rate])) by (le, uri, method))
+
+
+sum by (outcome)(increase(http_client_requests_seconds_bucket{app="corebanking-account-manager", client_name=~"core-api-gateway.*", le="+Inf"}[$rate]))
+
+# a metric name used in Prometheus for monitoring HTTP server requests. It's a histogram metric type that provides a distribution of the duration of HTTP requests over a defined set of intervals, known as buckets.
+# The metric http_server_requests_seconds_bucket has a label le that represents the upper bound of the bucket. The value of the le label is the inclusive upper bound of the bucket.
+# This metric allows you to monitor the performance of your HTTP server and understand the distribution of request durations
+http_server_requests_seconds_bucket{service=""}
+
+# a metric name used in Prometheus for monitoring HTTP client requests. It's a histogram metric type that provides a distribution of the duration of HTTP requests over a defined set of intervals, known as buckets.
+# This metric allows you to monitor the performance of your HTTP client and understand the distribution of request durations
+http_client_requests_seconds_bucket{service=""}
+
+
+# provides the average time taken for a fetch request
+kafka_consumer_fetch_manager_metrics_fetch_latency_avg
+
+# provides the average number of responses received by the producer per second
+kafka_producer_producer_metrics_response_rate
+
+# provides the total time taken to process requests
+kafka_network_requestmetrics_totaltimems
+
+
+sum(rate(temporal_workflow_endtoend_latency_seconds_bucket{app="borrow-collections-service"}[15m]))
+
+temporal_workflow_endtoend_latency_seconds_bucket{app="borrow-collections-service"} => gives you metric and its labels based on how often the app is scraped
+
+rate(temporal_workflow_endtoend_latency_seconds_bucket{app="borrow-collections-service"}[15m]) => divides the vector results into 15m intervals and calculates the rate for each of them
+
+sum(rate(temporal_workflow_endtoend_latency_seconds_bucket{app="borrow-collections-service"}[15m])) => sums up all of rate of the metric over the 15m intervals
+
+
+
+sum without(instance, pod) (http_server_requests_seconds_bucket{app="borrow-line-manager", uri="/api/v1/borrow/revolving-lines", method="PUT", status="200", le="+Inf"})
+
+http_server_requests_seconds_bucket{app="borrow-line-manager", uri="/api/v1/borrow/revolving-lines", method="PUT", status="200", le="+Inf"} => This is a metric that measures the duration of HTTP requests in seconds. It's a histogram metric where the le label indicates the upper bound of the histogram bucket
+
+sum without(instance, pod) (...) => The sum function is an aggregator that sums up all the values in the specified range. The without clause removes the listed labels (instance and pod in this case) from the result. So, this part of the query is summing up all the values of the filtered metric, but it's doing so in a way that doesn't distinguish between different instances or pods. This means that the result will be the total count of HTTP requests matching the specified criteria across all instances and pod
