@@ -1,0 +1,153 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  annotations:
+    crown.tmachine.io/package-version: scheduler_db_stats_pkg-2024-10-01-0fe5e3c806f2
+    crownPackageVersion: scheduler_db_stats_pkg-2024-10-01-0fe5e3c806f2
+  labels:
+    app: scheduler-db-stats-job
+    app.kubernetes.io/created-by: crown-operator
+    app.kubernetes.io/managed-by: crown
+    app.kubernetes.io/part-of: scheduler_db_stats_pkg
+    app.kubernetes.io/version: 0fe5e3c806f2b3538a867f9e087363e274da6aba
+    crown.tmachine.io/package-date: "2024-10-01"
+    crown.tmachine.io/package-hash: b11ee72715d93cf833d960a64187ae2e
+    crownPackageHash: b11ee72715d93cf833d960a64187ae2e
+    icb.jpmorgan.com/squad: ICB_Ledgers
+    project: vault
+  name: scheduler-db-stats-job
+  namespace: 105250-core-vault
+  ownerReferences:
+  - apiVersion: tmachine.io/v1
+    blockOwnerDeletion: true
+    controller: true
+    kind: Crown
+    name: scheduler-db-stats-pkg-2ebb83e328
+spec:
+  concurrencyPolicy: Forbid
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    metadata:
+      labels:
+        app: scheduler-db-stats-job
+        project: vault
+    spec:
+      template:
+        metadata:
+          labels:
+            app: scheduler-db-stats-job
+            icb.jpmorgan.com/squad: ICB_Ledgers
+            project: vault
+        spec:
+          containers:
+          - args:
+            - --secret_dir
+            - /etc/hault/secret/scheduler/database/
+            - --db_exclude_pooler
+            envFrom:
+            - configMapRef:
+                name: scheduler-db-config-scheduler-db-stats-pkg-65227c2c1b
+            - configMapRef:
+                name: service-mesh-config-scheduler-db-stats-pkg-ffd43218ae
+            image: dockerdev.artifactory.dyn.prd.aws.jpmchase.net/container-external/docker.external.thoughtmachine.io/vault/kernel/scheduler/db_stats_cronjob:vault-4.6.33
+            imagePullPolicy: IfNotPresent
+            name: main
+            ports:
+            - containerPort: 13434
+              name: prometheus
+              protocol: TCP
+            - containerPort: 13435
+              name: status
+              protocol: TCP
+            resources:
+              limits:
+                cpu: 100m
+                memory: 200Mi
+              requests:
+                cpu: 10m
+                memory: 32Mi
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop:
+                - ALL
+            terminationMessagePath: /dev/termination-log
+            terminationMessagePolicy: File
+            volumeMounts:
+            - mountPath: /etc/hault/secret/scheduler/database
+              name: scheduler-secrets-volume
+              readOnly: true
+            - mountPath: /etc/hault
+              name: hault-volume
+              readOnly: true
+          dnsPolicy: ClusterFirst
+          initContainers:
+          - env:
+            - name: SECRET_KV_BACKEND
+              valueFrom:
+                configMapKeyRef:
+                  key: SECRET_MOUNT_POINT
+                  name: hault-config-teller-scheduler-db-stats-pkg-732f5a721b
+            - name: VAULT_ADDR
+              valueFrom:
+                configMapKeyRef:
+                  key: address
+                  name: hault-config-teller-scheduler-db-stats-pkg-732f5a721b
+            - name: NAMESPACE
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: metadata.namespace
+            - name: APP_NAME
+              value: scheduler-db-stats-job
+            envFrom:
+            - configMapRef:
+                name: hault-config-teller-scheduler-db-stats-pkg-732f5a721b
+            image: dockerdev.artifactory.dyn.prd.aws.jpmchase.net/container-external/docker.external.thoughtmachine.io/hault/teller/init:vault-4.6.33
+            imagePullPolicy: IfNotPresent
+            name: teller-init
+            resources:
+              limits:
+                cpu: 500m
+                memory: 256Mi
+              requests:
+                cpu: 10m
+                memory: 32Mi
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop:
+                - ALL
+              runAsGroup: 37100
+              runAsUser: 37100
+            terminationMessagePath: /dev/termination-log
+            terminationMessagePolicy: File
+            volumeMounts:
+            - mountPath: /etc/hault/secret/scheduler/database
+              name: scheduler-secrets-volume
+            - mountPath: /etc/hault
+              name: hault-volume
+            - mountPath: /etc/hault/config
+              name: hault-config-volume
+          restartPolicy: OnFailure
+          schedulerName: default-scheduler
+          securityContext:
+            runAsGroup: 37100
+            runAsUser: 37100
+          serviceAccount: scheduler-db-stats-job
+          serviceAccountName: scheduler-db-stats-job
+          terminationGracePeriodSeconds: 30
+          volumes:
+          - emptyDir:
+              medium: Memory
+            name: hault-volume
+          - configMap:
+              defaultMode: 420
+              name: hault-config-teller-scheduler-db-stats-pkg-732f5a721b
+            name: hault-config-volume
+          - emptyDir:
+              medium: Memory
+            name: scheduler-secrets-volume
+  schedule: '*/30 * * * *'
+  successfulJobsHistoryLimit: 1
+  suspend: true
