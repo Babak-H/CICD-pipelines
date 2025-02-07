@@ -1842,3 +1842,321 @@ webhooks:
 burn rate: https://docs.datadoghq.com/service_management/service_level_objectives/burn_rate/
 
 
+Created by Gary Barter, last modified by Jasmin Taffurelli on Jan 23, 2023
+The intention of this page is to clarify how all roles will be interviewed moving forwards, so that we get greater consistency and efficiency on the hiring process.
+
+Please see the interviewer panel: Pool Roster (Core Engineering - Interview Rota). Whilst this is being built, please see current pipeline for 2023: Cloud Engineering 2023 - Role One-Pager
+
+Please see the Cloud Engineering live pipeline Tracker page for all regions: TBC
+
+Job Specification
+For each job a specific specification will be created and referenced in all correspondence.
+
+It should include all the standard details including the location and grade guide
+
+Currently we are ensuring that all roles for Engineering roles for Core Engineering carry a bias towards software development in the candidates background and this should be specified in the job spec.
+
+The job specs can be found here: TBC
+
+Interview approach
+There will be three main rounds of interview for the Cloud Engineering roles: Interview Panel
+
+#1 CV screen (Mandatory)- 30 minutes with an engineer (Mark/Petrut/Kyle)
+Initial review of all submitted CVs by recruiter.
+When screening, we want to ensure that the candidates have some experience/background as a software engineer, with an OOO language (Java, Golang, Python,, C#, PHP). The engineer also needs to have solid experience working on the infrastructure side of things ideally, with Cloud (AWS greatly preferred but open to GCP, Azure. Another important element is the Kubernetes experience- this is something that the team home in on during the technical interview. An engineer should have active experience with it, as opposed to it just being part of their company tech stack.
+The engineer will look to find out a bit about the breadth of experience the candidate has, from the challenges they have solved from an infra POV to their  current remit and toolkit. It will also be a chance for the candidate to find out a bit about the team/tech stack/role).
+After screening, the engineer will give you a decision on whether the candidate goes through to the final two interviews or does not. They will progress the candidate to the next round or provide feedback as to why the candidate is declined. 
+#2 Technical interview 1: Software engineering/Infrastructure (Mandatory)- 60 minutes with ONE engineer from Software Engineering pool and ONE engineer from Cloud Engineering pool.
+The aim of this technical interview is to assess an engineer's problem solving coding ability (in their strongest OOO language) and assess their ability to think like a software engineer. It is also to assess infrastructure knowledge and experience, especially focusing on our core tools (EG Toolchain components, CI/CD and SDLC concepts, AWS services, EKS/Kubernetes, Infra as code and Terraform, SRE & Monitoring etc).
+The 1st part- 30 mins- software engineering: They will be provided with a problem to write a solution for- the team will walk them through the problem and add additional considerations for the engineer to address. Ideally, the candidate would do this in Java/Python/Go.
+The 2nd part- 30 mins- Infrastructure knowledge and experience: The team will look to find out about their Cloud experience/ impact they have had/infrastructure/team business issues that they have solved in their previous/current role. The team do need Kubernetes experts so the candidate will have needed to work with Kubernetes directly, if they are to be considered for a VP role.
+The technical also provides an opportunity for candidate to learn more about the role and what it means to work  in Dynamo.
+Emphasis is placed on those skills referenced on the candidate CV
+Though, any question relevant to the role may be asked in order to understand candidate capability
+Where the role has a specific target area then more weight will be given to this area
+For example when seeking a candidate for a Cockroach role, more weight will be given to this subject
+This allows flexibility to select questions appropriate to the role and the candidate experience, as Core Engineering is a broad topic area and not many will be expert in all areas
+#3 Final zoom interview (Mandatory)- 30 minutes
+The aim of this final interview is for a final verification of suitability prior to making a formal job offer
+The content of the interview may include:
+Technical content
+Banking or application services
+Security and controls
+Cultural suitability discussions
+Explanations around job role and expectations
+Deeper dive into any areas identified in previous rounds for follow up
+Final questions from candidate
+Any other area TBD
+The intention is that a final decision and offer can be made off the back of this conversation
+Typically this interview ill include one Senior VP (Petrut/Kyle) OR Mark Hale from Core Engineering, normally those who were not involved in the first round.
+
+
+After the 2nd and 3rd interview takes place, the team will do a wash up (organised by them) and provide the FULL feedback in one document.
+
+
+
+
+So you want to create or update a Cockroach database
+CRDs
+Cockroach Database
+Cockroach Database
+apiVersion: dynamo.jpmorgan.com/v1 # Do not change
+kind: CockroachDatabase # Do not change
+metadata:
+  namespace: 105250-namespace # change to your namespace
+  name: my-database
+Names within the CRD must only contain alphanumeric characters and "-" (the "-" will be converted to "_" in the controller) but cannot end or start with "-" and can have up to 63 characters, otherwise the CRD will fail.
+Applying a CockroachDatabase as above will do the following:
+
+create a database called: 'my_database'
+create a read-write user called: 'my_database' with the following database privilege: SELECT, INSERT, UPDATE, DELETE  
+create a 'Liquibase' user called: 'my_database_cj' with the following database grants: CREATE, DROP and  privilege of  SELECT, INSERT, UPDATE, DELETE
+Cockroach Database Grant
+Cockroach Database
+apiVersion: dynamo.jpmorgan.com/v1 # Do not change
+kind: CockroachGrant # Do not change
+metadata:
+  namespace: 105250-namespace # change to your namespace
+  name: my-extra-grant
+spec:
+  user: my-outbox-deployment # if user doesn't exist, the grant will fail
+  database: my-database # database name should use dashes instead of underscores else the grant will fail
+  databaseGrants: [CREATE, DROP, SELECT, INSERT, UPDATE, DELETE ] # optional grants to grant on a database level, field can be omitted if not needed
+  tableGrants:
+    - table: my-outbox
+      action: [ SELECT, UPDATE ] # CREATE, DROP, ETC.
+The default applicable grants are: CREATE, DELETE, DROP, GRANT, INSERT, SELECT, UPDATE (anything other than the grants of the admin user create_cockroach_database will fail).
+
+The database and its associated grant CRDs must be in the same namespace, otherwise the CRD will fail.
+Names within the CRD can only contain alphanumeric characters and "-" (the "-" will be converted to "_" in the controller) but cannot end or start with "-" and can have up to 63 characters, otherwise the CRD will fail.
+Database grants are applied on the whole database, including existing tables.
+The user to which the grant CRD is applied has to exist already, otherwise the CRD will fail.
+The database to which the grant is applied must already have a CockroachDatabase CRD created, otherwise the CRD will fail.
+Note the jdbc url used in the CRD is: 
+
+jdbc:postgresql://cockroach-public:26257/defaultdb?sslmode=verify-full&sslrootcert=/cdb/client/ca.crt&sslcert=/cdb/client/client.create_cockroach_database.crt&sslkey=/cdb/client.key.pk8&ApplicationName=create-cockroach-database
+How to migrate from cockroach_sql_runner to CRD
+Teams can migrate at any time. At the moment both the cockroach_sql_runner and the CRD are supported, but the former will be disabled in the future.
+
+How to deploy
+You deploy the CRDs along with your existing helm (either as a separate yaml or a new helm project) into the spoke cluster that you run from and it will be recognized and picked up by the Cockroach Controller. So if you have your microservice deployed in DCORE, you would deploy the CockroachDatabse CRD in the same namespace. You can choose to do this at the same time as the microservice, or as part of a different helm project and deploy ahead of time. Any calls to the corresponding cockroach_sql_runner script(s) will have to be removed from the spinnaker pipeline definitions (i.e. from the dinghyfiles).
+
+Here is some sample code for migrating database creation: core-psd2-tpp-authoriser-service
+
+Note that if you have liquibase jobs in your pipeline, they will have to be applied after helm is applied.
+
+What the CRD does / does not do relative to cockroach_sql_runner
+create database	yes	yes
+drop database	no	yes
+add grants	can add multiple grants on multiple tables within a database at a time	can add select and update on one table within a database at a time
+run arbitrary sql scripts	no	yes
+create user	coming soon	tbc (is it done using arbitrary sql?)
+Debugging
+You can leverage the following commands to do common tasks on the K8s control plane:
+
+Debugging
+# show CockroachDatabases deployed in the current namespace, it prints the current state of the database
+kubectl get cdb
+ 
+# show CockroachDatabaseGrants deployed in the current namespace, it prints the current state of the crd
+kubectl get cdbg
+ 
+# Using the describe we get an additional overview of the events
+kubectl describe cdb
+ 
+# Check the application logs (must be in the 105250-cockroach-controller namespace)
+kubectl logs -f create-cockroach-database -c service
+FAQ
+Can I delete a database?
+You can delete the CRD resources, but it will not remove the grants/databases at this moment in time. If you need to delete a database, you can leverage the existing pipelines.
+Are there any controls around who can create a database where?
+At the moment we don't have any controls/restrictions in place. The future idea is that the create_cockroach_database user is only accessible to this CRD controller.
+How do I know my database is created?
+Our controller updates the CRD with a status stanza that will indicate the current state.
+Do I have to migrate?
+At this stage both solutions will work and can be used at the same time. Actions are only done in an additive fashion and are effectively idempotent.
+How do I add permissions when I add tables?
+The default rule in Cockroach is that when a table is created, it inherits the permissions from the database. That is why when we create the database, we grant appropriate permissions for the default users.
+Example usecases
+Both examples below require the users to be already present before applying grants
+
+Outbox pattern
+Cockroach Database
+apiVersion: dynamo.jpmorgan.com/v1
+kind: CockroachDatabase
+metadata:
+  namespace: 105250-namespace
+  name: my-service
+ 
+---
+ 
+apiVersion: dynamo.jpmorgan.com/v1
+kind: CockroachGrant
+metadata:
+  namespace: 105250-namespace
+  name: my-service-outbox
+spec:
+  user: my-outbox-service-deployment
+  database: my-service
+  databaseGrants: [SELECT]
+Blue-Green deployments
+Cockroach Database
+apiVersion: dynamo.jpmorgan.com/v1
+kind: CockroachDatabase
+metadata:
+  namespace: 105250-namespace
+  name: my-service
+ 
+---
+ 
+apiVersion: dynamo.jpmorgan.com/v1
+kind: CockroachGrant
+metadata:
+  namespace: 105250-namespace
+  name: my-service-green
+spec:
+  user: my-service-green
+  database: my-service
+  databaseGrants: [SELECT, INSERT, UPDATE, DELETE]
+ 
+---
+ 
+apiVersion: dynamo.jpmorgan.com/v1
+kind: CockroachGrant
+metadata:
+  namespace: 105250-namespace
+  name: my-service-blue
+spec:
+  user: my-service-blue
+  database: my-service
+  databaseGrants: [SELECT, INSERT, UPDATE, DELETE]
+Sample project with pipeline setup guidance
+To add post implementation
+
+
+
+elasticsearch logs export:
+Export your search results in CSV
+Export from OpenSearch requires 3 steps
+1) perform search result and select required fields (by default all fields will be exported)
+2) save the search result
+3) click on "Reporting" -> "Generate CSV"
+
+There is a limit of 5000 entries per export, adjust the time range accordingly:
+
+
+
+
+Created by John Jones, last modified by Jerome Cortel on Nov 01, 2024
+Table of Contents
+I. Introduction
+
+II. Main Details Section
+
+III. Planning Section
+
+IV. Other useful details
+
+V. Key Takeaways
+
+VI. References
+
+VII. Document Information and Version Control
+
+I. Introduction
+Objective
+
+This document details the Minimum Acceptance Criteria to ensure adequate and detailed documentation is included in ServiceNow Change Records.
+
+Scope
+
+This criteria is valid for all Normal Change Records
+
+Roles and Responsibilities
+
+The Change Owner is responsible for populating the CHG records with the relevant data.
+
+The Change Approver is responsible for ensuring the MAC is met before approving the Change.
+
+II. Main Details Section
+Configuration Item
+
+Input in the Configuration Item that is being impacted by the change.
+Short Description
+
+MUST - Provide a high-level overview / description of the change in business language (limit technical jargon).
+MUST - use business language and avoid acronyms.
+SHOULD - Prefix with the application name.
+DON'T - just add a link to another site/ ticket.
+Description
+
+MUST - Clearly state what the change is going to do and why it is required.
+MUST - Use business language and explain acronyms.
+MUST - Summarize the risks of implementing the change (i.e. what could go wrong and what is the likelihood?) and/or business impact of NOT implementing it.
+MUST - Explain the business driver/rationale/requirement for the change and document the business impact of NOT implementing the change.
+MUST - Provide a description of all changes to be implemented.
+MUST – Include all DYN tickets associated to the change
+SHOULD - List any EPV (privileged access) accounts that are required to implement the change.
+If the change window is more than 24 hours, add a justification for the extended change window.
+Change Window – Planned Start / End Dates
+
+Change Window = Implementation + Technical Validation + Back Out Plan + Technical Validation of the Backout
+MUST - Include Breakglass Operations.
+MUST - factor in any dependencies, e.g. resource availability, batch cycle completion, systems availability.
+While firmwide recommends that changes do not exceed 24 hours, ensure change window is sufficiently long.
+If the change window is more than 24 hours, the implementation plan must contain sufficient details (day-by-day breakdown of activities) to justify the change window.
+Risk
+
+The Risk Level is automatically calculated in ServiceNow using the Risk Model and is fully data driven.
+The Change Owner can manually raise the Risk Level if necessary.
+III. Planning Section
+Release Attestation
+
+Declare if the change is based on a software release or code update and as such is subject to all applicable controls for Technology Development (TCS-071/TCS-074).
+Fallback Strategy
+
+Select from the Drop Down if the Fallback Strategy is Backout or Fix Forward.
+The fix forward solution is to stabilize the environment. Justification is required if Fix Forward is selected.
+Pre-implementation plan
+
+MUST - Document activities that were completed prior to the change implementation to ensure success.
+MUST - Utilize JET evidence store (go/JET). Otherwise, pre-Implementation testing evidence should be attached to the Change Record.
+SHOULD - If applicable, mention previous, similar, successful implementations from the past.
+Implementation Plan
+
+MUST - Clearly document the steps of the implementation plan, including critical milestones and the teams responsible for performing them.
+MUST – Detail all the different test types of test including smoke, alpha with associated JET IDs.
+MUST – Detail the list of tests and their pass criteria as a %.
+MUST – For any tests that did not pass ICB quality gates, a decision ticket must be included to show evidence of risk acceptance of the failed tests.
+MUST – Explicitly document which controls and not for the release (to ensure that change approvers are informed of the necessary control requirements).
+SHOULD - Include a detailed technical plan which is attached to the Change record or Implementation Task record.
+SHOULD - Identify a ‘point of no return’ in the implementation plan. Upon reaching this point, assess if the change implementation is at risk of going beyond the Planned End time.
+Fallback Strategy Plan
+
+MUST - State if the backout is automated or manual, and whether the backout plan has been tested/proven.
+MUST - Include the contact details of the person responsible for executing the backout.
+SHOULD - Include a detailed step by step plan which is attached to the Change Record.
+Post Validation Plan
+
+MUST - Describe the checks that can be feasibly conducted within the change window to validate the success of the change. (evidence of this is required for Post Change Validation)
+MUST - Clearly state the success criteria and who is responsible for executing the checks.
+IV. Other useful details
+Outages
+
+If the implementation will cause a planned outage or degradation of services, an Outage record must be created; if there are multiple outages they should be defined separately.
+Change Task – Validation
+
+Document post change validation testing and attach relevant evidence to the ServiceNow Change Record as documented in the Post Validation Plan.
+ Steps to create a Change Task - Validation
+V. Key Takeaways
+Change data should be clear and simple to understand – limit the use of technical jargon and don’t use acronyms.
+Include details of ALL changes that are included in the release.
+Be generous when planning the change window.
+Include a detailed summary of context if adding dynamic links to Change Records
+Why? – Firmwide guidance is to avoid dynamic links that are not accessible to all reviewers and auditors
+Use Jet Evidence Store for evidence as applicable (attach evidence to the Change Record)
+Ensure you are thorough in your pre-implementation, implementation, fall-back strategy and post validation test plans. (use tool tip links in SNOW if in doubt)
+Refer to the Change Quality Review Playbook for examples of good vs bad changes
+
+
+Raft storage: https://developer.hashicorp.com/vault/docs/configuration/storage/raft
