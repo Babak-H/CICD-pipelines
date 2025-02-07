@@ -1048,3 +1048,794 @@ fi
 Hault pipeline in Harness:
 1. run hault_k8s to create the CRD
 2. run k8s_hault_operator to create the operator that executes the CRD
+
+
+Created by Chang Ge, last modified by Gad Abdelrahman on Apr 03, 2024
+Encryption at rest
+Definition
+Requirements
+Control aspects
+Implementation
+Reference
+Encryption in transit
+Definition
+Requirements
+Control aspects
+Implementation
+Reference
+Encryption at rest
+Definition
+All data (on DB instances, backups, snapshots etc) must be encrypted at rest.
+
+Requirements
+When an Aurora cluster is created, encryption must be enabled whilst using a customer-managed key (CMK).
+
+Note that an Aurora cluster's encryption key cannot be modified afterwards.
+Each Aurora cluster must use its own CMK for encryption-at-rest.
+
+It is forbidden for multiple Aurora clusters to share an encryption key.
+This specific requirement only applies to Aurora clusters created after October 2023.
+The CMK's specifications are:
+
+Key type: symmetric
+Key usage: Encrypt and decrypt
+Key material origin: KMS
+Regionality: Single-region key
+Enable automatic rotation every year
+No need to configure special key policy on top of the default one
+Control aspects
+TCP-1.05: Data Protection
+
+TCS-011: Data at Rest Protection
+TCS-011-001: Confidentiality Protection at Rest 
+CP-2802 Application Data at Rest Encryption
+TCS-013: Cryptographic Mechanisms
+TCS-013-005: Manage lifecycle of Master Keys, Key Encryption Keys, and Data Encryption Keys 
+CP-2880 Cryptographic Key Lifecycle Management
+Implementation
+This is provided by CPE Aurora TF module which allows the creation of a CMK which fits the previously mentioned requirements. 
+
+Reference
+https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/Overview.Encryption.html
+
+Encryption in transit
+Definition
+All network traffic to and from Aurora DB instances must be encrypted in transit.
+
+Requirements
+TLS 1.2 or above must be used to encrypt the network traffic to and from Aurora instances.
+
+The following parameters within the PostgreSQL parameter group need to be set:
+
+rds.force_ssl  must be set to 1
+ssl_ciphers  must be set to:
+DHE-RSA-AES128-SHA,DHE-RSA-AES128-SHA256,DHE-RSA-AES128-GCM-SHA256,DHE-RSA-AES256-SHA,DHE-RSA-AES256-SHA256,DHE-RSA-AES256-GCM-SHA384,ECDHE-RSA-AES256-SHA384,ECDHE-RSA-AES128-SHA,ECDHE-RSA-AES128-SHA256,ECDHE-RSA-AES128-GCM-SHA256,ECDHE-RSA-AES256-SHA,ECDHE-RSA-AES256-GCM-SHA384,TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_RSA_WITH_AES_256_GCM_SHA384,TLS_RSA_WITH_AES_256_CBC_SHA,TLS_RSA_WITH_AES_128_GCM_SHA256,TLS_RSA_WITH_AES_128_CBC_SHA256,TLS_RSA_WITH_AES_128_CBC_SHA,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+
+The SQL client must specify sslmode=verify-full as a connection parameter.
+
+This requires the Aurora DB's CA certificate to be in the client's trust store.
+The CA bundle can be downloaded at https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/UsingWithRDS.SSL.html.
+The following CA bundles are allowed:
+
+rds-ca-rsa2048-g1: RSA2048 + SHA256
+rds-ca-rsa4096-g1: RSA4096 + SHA384
+rds-ca-ecc384-g1: ECC384 + SHA384
+Control aspects
+TCP-1.04: Identity & Access Management
+
+TCS-024: Digital Certificate Management
+TCS-024-001: Digital Certificate Usage
+CP-4766 Use of Digital Certificates
+TCS-024-003: Digital Certificate Ownership
+CP-4768 Digital Certificate Ownership
+TCS-024-004: Digital Certificate Validity Period
+CP-4769 Digital Certificate Validity Period
+TCS-024-005: Digital Certificate Renewal
+CP-4770 Digital Certificate Renewal
+TCS-024-006: Digital Certificate Revocation
+CP-4771 Digital Certificate Revocation
+TCS-024-007: Digital Certificate Cryptographic Requirements
+CP-4772 Digital Certificate Key Pairs
+TCP-1.05: Data Protection
+
+TCS-012: Data in Transit Protection
+TCS-012-001: Confidentiality Protection in Transit
+CP-2812 Data in Transit Encryption
+TCS-013: Crptographic Mechanisms
+TCS-013-001: Prevent Compromise of Data due to Weak Cryptography
+CP-2807 Use of Cryptographic Algorithms & Key Lengths
+Implementation
+Encryption in transit configuration on the Aurora side is enforced by default when using CPE Aurora TF module.  
+Encryption in transit configuration on the client side example:
+url: jdbc:aws-wrapper:postgresql://example.eu-west-1.rds.amazonaws.com:5432/db?sslmode=verify-full&sslrootcert=/aurora-certs/global-bundle.pem
+global-bundle.pem: is provided by aurora-ssl-certificates
+
+
+
+Reference
+https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/Overview.Encryption.html
+
+https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/AuroraPostgreSQL.Security.html
+
+
+
+
+The steps described below will only work for projects using "buildAndDeployPython"
+
+
+
+In the Jenkinsfile:
+The "isRunSonarQube" parameter has now been updated to be true by default (no action needed)
+The "useCoverageTool" parameter has now been updated to be true by default and generates the coverage report to be used by SonarQube (no action needed)
+Set the "coverageToolSourceDir" field to point to your source file directory (ex. "src"). This will determine the files for which the coverage metric is computed
+Create a "sonar-project.properties" file
+Set the "sonar.sources" field to point to your source file directory (ex. "src")
+Set the "sonar.tests" field to poi to your test folder (ex. "tests")
+Set the "sonar.python.coverage.reportPaths" field to point to the coverage report generated during the "Unit Testing" step in the build. By default that path is "generated/coverage_report.xml".
+The path/report name are defined in "buildAndDeployPython", in the "COVERAGE_XML_REPORT" variable. 
+Warnings:
+A new pipeline parameter "covergaeToolSourceDir" was created serving the same purpose as "coverageToolProject" while being more informative. To accommodate legacy projects, "coverageToolProject" has been kept in buildAndDeployPython for now. It is highly encouraged to use the new parameter for any new projects and replace it for the already existing projects.
+Previously, buildAndDeployPython used a default value for "coverageToolSourceDir" setting it to "tests". By setting the parameter to point to the test folder, the coverage will be reported for the test files, resulting in a 0% coverage reported in SonarQube. The parameter's default value has been changed to a more appropiate value: "src". Projects having their source file directory named "src" can skip setting up the "coverageToolSourceDir" field in the Jenkinsfile.
+
+
+
+Core-Hault-Operator migration from 0.11.15 to 1.4.6
+Created by Babak Habibnejad Gohardani on Jun 25, 2024
+
+
+A. Spinnaker pipeline spinnaker-for-core-hault
+
+Run the pipeline at version 0.11.15, this step should be without issues except the error related to re-creating the SA. Branch DYN-576756-add-harness-0.11
+ set the terraform version to 0.12.12 , this is required for first time due to errors if we set the version to higher 0.12 sub versions, which is caused by how the formatting of the state files changes in higher terraform versions. only other solution I have found online was to delete and recreate the state file. comment the 
+aws_iam_role_policy.hault_access_policy , this will allow the the OIDC role to be deleted. this will throw an error that Role already exists (plus SA error).  Branch DYN-576756-add-harness-0.12
+ set the version to 0.12.31 , and uncomment aws_iam_role_policy.hault_access_policy and run the pipeline. will throw an error that there is wrong value for the policy "MalformedPolicyDocumentException" , re-run the pipeline and the issue will be fixed (will still get the SA error)  Branch DYN-576756-add-harness-0.11
+run the version 0.13.7 pipeline, no changes should be visible here (except SA error)  Branch DYN-576756-add-harness-0.12
+run the pipeline version 1.0.7 . here we should see changes related to object_naming.random_string.GUID_GENERATED, aws_s3_bucket_versioning.versioning, aws_s3_bucket_server_side_encryption_configuration.encryption, aws_s3_bucket_public_access_block.deny_public_access, aws_s3_bucket_logging.logging, aws_s3_bucket_lifecycle_configuration.lifecycle, bucket.aws_s3_bucket_acl.acl[0]  being created, this is due to fact that we are moving from older version of s3-bucket to a newer and remote version CP has created, the Role for OIDC will also be recreated as we are moving from internal oidc module to the one hosted on core-vault  Branch DYN-576756-add-harness-1.0.7
+
+ at this point terraform state is at version 1.0.7 and we can delete the Service account manually from command line and recreate it from pipeline. in lower terraform versions it wouldn't be useful since due to terraform bugs deleting and recreating SA would just cause the error to be reestablished the next time we run the pipeline. run the pipeline again on version of 1.0.7 of terraform, it will re-create the Service account and update some resources that are directly related to it. to make sure everything is working fine, re-run the plan again, there should not be ANY resource that needs creation or update.  Branch DYN-576756-add-harness-1.0.7
+B. Harness pipeline harness-for-core-hault
+
+ run the pipeline on Harness, it should not re-create any resource, but will update the state to terraform 1.4.6  Branch DYN-576756-add-harness
+delete the hault-configure pod from core-hault and restart all deployments in core-vault 
+kubectl get pod -n 105250-core-hault
+kubectl delete pod hault-configurer-xxxxx-xxxx -n 105250-core-hault
+kubectl rollout restart deploy -n 105250-core-vault
+check the pods on core-vault again, there should be no errors
+kubectl get pod -n 105250-core-vault
+
+
+Known issues:
+
+pipeline might throw errors due to issues downloading the AWS or Kubernetes provider. re-running the pipeline again will fix these issues.
+
+
+HashiCorp Vault Grafana Metrics
+Created by Babak Habibnejad Gohardani on Sep 25, 2024
+Health Status: group by (pod) (up{job="hault"})  => checks if the hault pods are up and working or not (currently only shows existing pods)
+
+Sealed Status: max(1 + vault_core_unsealed{}) => if the vault is unseal (unlocked) value is 2 otherwise 1 (sealed)
+
+Secrets: vault_secret_kv_count => count of key-value (KV) secrets stored in HashiCorp Vault visible in column Number of entries, rest is info about the mount path of secrets and the app that contains the secret,...
+
+Number of Operations in secret: vault_route_read_secret__count =>  the count of read operations on secrets through specific routes in Vault. In Vault, routes are used to define how requests are handled, and this metric would track the number of times secrets are read via these route
+
+Time of Operations in secret: avg(rate(vault_route_read_${mountpoint}__sum[1m]) / rate(vault_route_read_${mountpoint}__count[1m]) * 1000) => how long each reading or listing of secrets takes in this namespace, by average
+
+Heap objects used: avg(vault_runtime_heap_objects{} / vault_runtime_malloc_count{}) => (number of heap objects currently allocated in the memory of the Vault process. Heap objects are dynamically allocated memory blocks) / ( total number of memory allocation (malloc) operations performed by the Vault process),  average number of heap objects per memory allocation operation, lower than 0.2 means memory is being used efficiently 
+
+Allocated MB: avg(vault_runtime_alloc_bytes{}/1000000) =>  number of Megabytes of memory currently allocated and in use by the Vault process, we can view how the memory usage is on average for all 3 Vault pods
+
+Available Tokens: avg(vault_token_count) => number of active tokens in HashiCorp Vault. In Vault, tokens are used for authentication and authorization. They are issued to clients and can have various properties such as time-to-live (TTL), policies, and renewable status
+
+Pending Tokens: avg(vault_token_create_count - vault_token_store_count) => count of token creation operations in HashiCorp Vault - count of tokens currently stored in Vault , so you will get how many tokens are created but not saved in Vault
+
+Request Handling: sum(vault_core_handle_request) by (quantile) => which quantile (p 0.5 , p 0.9 , p 0.99) handles how many requests
+
+Log Requests: vault_audit_log_request_count, vault_audit_log_response_count => count of audit log requests in Vault. Vault's audit logging feature records all requests and responses to the Vault server, providing a detailed log of all operations for security and compliance purposes. This metric would track the number of audit log entries created
+
+Log Request/Response Failures: vault_audit_log_request_failure, vault_audit_log_response_failure => count of failed attempts to log request/responses in the audit log of Vault. Vault's audit logging feature records all requests and responses to the Vault server, and this metric would track the number of times an attempt to log a request/response has failed. Failures could occur due to various reasons such as misconfigurations, permission issues, or storage problems.
+
+
+
+What is SonarQube
+Created by Theodora Litean-Tataru on Sep 20, 2023
+Introduction
+What is SonarQube?
+SonarQube is ICB's continuous code inspection solution for identifying and managing code smells, bugs, and security vulnerabilities. SonarQube evaluates code against pre-defined technology-specific quality profiles. The various measures produced can be used to create Quality Gates which helps answer part of the question: can you ship your code to the customer? It can integrate with a CI engine (e.g. Jenkins) to enable continuous/time controlled scans, and with SCM tools (e.g. Bitbucket) to enable branch level and pull request level quality metrics.
+
+Why SonarQube?
+Improve code quality - the quality of an application is directly linked to the code. Consequently, when the code of an application is improved, the application itself is improved
+Grow developer skills  - by providing developers with code feedback and identifying errors, SonarQube enables them to make informed decisions and develop better code in the future. In addition to demonstrating code issues, the platform also assists developers in comprehending the root cause of the issue and how to prevent similar occurrences in the future
+Reduce risk  - organizations may be vulnerable to a security breach due to the presence of bugs and vulnerabilities in their code. By actively scanning code at the time of writing, SonarQuube assists organizations in mitigating their digital risk
+Scale With Ease - SonarQube was built to scale. As of yet, there has been no limit to this tool’s scalability. Whether you have one or one thousand applications with millions of lines of code, SonarQube performs at a high level and provides in-depth analysis
+
+More about SonarQube in ICB
+
+
+Dictionary
+Code Smell - A maintainability-related issue in the code. Leaving it as-is means that at best maintainers will have a harder time than they should making changes to the code. At worst, they'll be so confused by the state of the code that they'll introduce additional errors as they make changes.
+Bug - An issue that represents something wrong in the code. If this has not broken yet, it will, and probably at the worst possible moment. This needs to be fixed. Yesterday.
+Security Vulnerabilities  - a security-related issue which represents a backdoor for attackers.
+Quality Gate - is the best way to enforce a quality policy in your organization. It's there to answer ONE question: can I deliver my project to production today or not? The answer can be based on predefined conditions on measures related to overall or net new code.
+CI/CD  - the use of Continuous Integration/Continuous Deployment (CI/CD) tools enables a team to automate their development, deployment and testing processes. Some CI/CD tools specialize in the integration process, while others focus on continuous testing or other related functions.
+SCM - tracks modifications to a source code repository
+Branch - represents an independent line of development. A branch is a pointer to one specific commit, while a commit is a snapshot of your repository at a specific point in time
+Pull request - is a mechanism for a developer to notify team members that they have completed a feature. It lets engineers tell others about changes they've pushed to a branch in a  code repository
+
+
+DLQs
+Welcome to the DLQ documentation.
+
+Overview
+What are DLQs?
+Dead Letter Queues (DLQs) are a standard error handling mechanism for streaming software systems. In certain scenarios messages that cannot be processed by a production component when read from a queue are instead placed on a separate queue, the DLQ, for manual investigation and recovery. This ensures that subsequent messages on the original queue can continue to be processed, while any messages that cannot be processed are retained in full, i.e. there is no data loss.
+
+Once a message has been placed on a DLQ this indicates that the standard processing of the message was not able to complete, and no further processing of the message will occur automatically. You must take additional steps in order to recover the original operation that was unable to complete. Failure to do so can lead to incomplete Vault functionality.
+
+When are DLQs used?
+The errors encountered by a Vault component when processing a message consumed from a Kafka topic fall into two broad categories:
+
+Transient Errors occur when automatically retrying at a later time, without any state change within Vault, is likely to lead to successful processing of the message. For example if the database is temporarily unavailable, this would be a retryable error as when the database becomes available again the message will be processed successfully.
+
+Non-Transient Errors occur when automatically retrying, without any state change within Vault, is unlikely to lead to successfully processing the message. For example, if the message cannot be deserialised by the consumer, attempts to retry processing will not be successful.
+
+While most transient errors are handled within Vault, DLQs are used as a recovery mechanism for Kafka messages that are unable to be processed due to some non-transient errors.
+
+The Vault DLQ process is as follows:
+
+A Vault component which is a consumer of a particular Kafka topic consumes a message from the topic and attempts to process it.
+
+While processing the message, a non-transient error is encountered, meaning retrying with the system in its current state will not produce a successful outcome.
+
+The message is placed on a dedicated DLQ Kafka topic. Processing of subsequent messages from the original topic continues, but processing of the message that has been placed on the DLQ does not continue.
+
+Note that in some cases when a transient error is encountered when processing a message, depending on the cause of the error, processing of the message may be retried indefinitely. For example if the database remains unavailable. Cases like this should still be monitored as they may still require manual intervention to proceed (e.g. ensuring services can communicate with one another).
+
+DLQs may contain PII data both in the message bodies and the error output. As a result any personnel or system reading data from any DLQ may be exposed to it. You must take the appropriate steps to ensure that readers of DLQ messages have the appropriate authorisation.
+
+DLQ naming
+All DLQ topics within Vault follow a standard naming convention of containing .dlq or .failure in the topic name, most often at the end.
+
+DLQ message format
+When a message is placed on a DLQ topic, the format of the message on the DLQ will be as follows:
+
+The body of the message is identical to the original message, in the same format (JSON or Protobuf). For example if the originally consumed message is an AccountEvent, then the DLQ’d message body will be the same AccountEvent message.
+
+DLQ metadata detailing information about the original message is present in the x-tm-dlq-metadata message header in the form of a standard DLQ metadata message (see below for the full format). DLQ metadata values will always be formatted as JSON key / value pairs.
+
+Generally the processing error that led to the message being DLQ’d is present in either the x-tm-vault-error message header or in the stack_trace header within the DLQ metadata . These values will always be formatted as a JSON key / value pair.
+
+The DLQ metadata contains four mandatory fields and one optional field all as JSON key / value pairs:
+
+original_headers. This is a repeated field containing all the Kafka headers present in the original message.
+
+original_topic. This is a single string whose value is the topic that the original message was consumed from.
+
+original_consumer_group. This is a single string whose value is the consumer group used by the consumer which encountered the error while processing the message.
+
+original_timestamp. This is a single string whose value is the timestamp of when the original message was created.
+
+stack_trace. This is an optional single string field which, if present, will contain the processing error.
+
+Monitoring DLQs
+As mentioned above, you must actively monitor DLQs for new messages. In many cases, a message being placed on a DLQ represents a critical processing error which requires immediate attention.
+
+Thought Machine provides Prometheus Alerts that track new messages being placed onto DLQ topics. Alert pagers should be built on top of these alerts to inform you of new messages placed on a DLQ.
+
+For more information on how to configure Alert Pagers, as well as the full list of DLQ alerts, see the Observability Stack Installation and User guide.
+
+Detailed information about each individual DLQ can be found under the associated API section. This includes the processing being performed, the impact of a message being placed on that DLQ, and potential recovery steps to follow.
+
+DLQ recovery
+Any time a message is placed on a DLQ, you must take any necessary action to recover processing. Failure to do so will result in a loss of data and/or Vault functionality. While the severity of the functionality affected by a message placed on a DLQ will vary, note that even for less critical issues you must recover from DLQ messages within the timeframe of your Kafka retention period, which defaults to 7 days. Failure to do so will result in the message on the DLQ being permanently deleted, meaning recovery of the data/functionality may no longer be possible.
+
+When a message is detected on a DLQ Kafka topic:
+
+Consume the message from the DLQ, including the headers. As mentioned above the headers contain the error message. If displaying the Kafka message in full, take care to ensure viewers have the appropriate authorisation to view the data.
+
+Consult the DLQ documentation for the affected component in the corresponding API section of the Documentation Hub. If the relevant documentation does not provide sufficient information for the DLQ in question, contact Thought Machine support, following the process in your Service Procedure Manual.
+
+If the specific error is documented for the affected DLQ, follow the recovery instructions.
+
+If the error is not documented for the affected DLQ, contact Thought Machine support, following the process in your Service Procedure Manual.
+
+You should only manually interact with DLQ Kafka topics in error scenarios, and when doing so must take care not to use any consumer groups that are used by any production services
+
+Reading messages from a DLQ
+How you interact with Kafka topics within Vault will depend on your Kafka hosting solution and internal processes. If a lightweight approach is required for consuming messages, Thought Machine recommends the use of Kafkacat for interacting with Vault DLQ Kafka topics in error scenarios. Instructions for how to download and use Kafkacat can be found here, while providing the -h option when running Kafkacat will provide more information about the available functionality. Remember that wherever you choose to run Kafkacat, it will need access to your Kafka broker.
+
+If you are using Kafkacat to consume and read messages from a DLQ, we recommend:
+
+Running via Docker to ensure the latest version of Kafkacat is used. The command should start with docker run --rm confluentinc/cp-kafkacat kafkacat -b <your_kafka_broker> -t <name_of_dlq_topic> -C.
+
+Using the -J option to ensure the headers are displayed along with the message body for the consumed messages. Alternatively you can specify a format via -f which must include the %h header token.
+
+If you wish to only see the headers, you can provide a format that only contains the header token, e.g. -f ‘Headers: <%h>’. This may be useful if the original message contains data the user is not authorised to see (note however that PII data can sometimes occur in the error message, which will always be present in the headers). For a full list of all the format tokens and what data will be displayed, you can run docker run --rm confluentinc/cp-kafkacat kafkacat -h and consult the ‘Format string tokens:’ section. Only the data associated with a given token will be displayed when the -f option is used.
+
+Kafkacat will produce output to Stdout by default.
+
+If the message body is in protobuf format, it will not be human readable when read from the DLQ. You are still required to deserialise using the provided Vault .proto files. See the Deserialising Proto Messages section below. If the DLQ in question does not have the message type documented, contact Thought Machine support, following the process in your Service Procedure Manual.
+
+If your Kafka solution or internal process prohibits the use of Kafkacat, you must implement your own method of consuming from/producing to Vault DLQ Kafka topics.
+
+Deserialising Protobuf messages
+Depending on your environment settings, some DLQ message bodies will be in either Protobuf or JSON format:
+
+If the format is JSON, you do not need to follow the remainder of this section and must not use protoc on your message output.
+
+If the format is Protobuf, you will need to deserialise the message before it is human readable, instructions for which are below.
+
+To deserialise an encoded protobuf message, you must have access to the corresponding .proto file that contains the message definition in question. Many of these .proto files can be found in the 'Downloading the proto files' part of the Streaming API documentation for the relevant API. Once you have this file you can convert the message into human readable JSON. If you do not have access to the corresponding .proto file, please contact Thought Machine support, following the process in your Service Procedure Manual.
+
+To determine the correct .proto file for deserialising the body of a DLQ:
+
+Go to the documentation for the specific DLQ in question.
+
+Find the message type under the 'What message has been sent to the DLQ?' section.
+
+Find the .proto file that contains this message type. There will be a Message <value> line in the file, where <value> is the message type from the previous step.
+
+There are many ways that a .proto file can be used to read a message in protobuf format. If a lightweight approach is needed, Thought Machine recommends the use of Protoc.
+
+Protoc can be run on any protobuf bytes to convert to JSON as follows:protoc --decode=<package_name.message_name> <path_proto_file>
+
+The package name is defined in the .proto file by the line: package <package_name>;
+
+For example:
+
+protoc --decode=test_package.TestMessage path_to_proto/test.proto
+
+would deserialise protobuf bytes into JSON format for a protobuf message of type TestMessage where:
+
+The TestMessage type is defined in 'test.proto'.
+
+The 'test.proto' contains a package test_package; line, which defines the package name.
+
+The 'test.proto' file is located in your /path_to_proto/ directory.
+
+If using protoc in conjunction with Kafkacat, you should only read the message body from Kafka before passing it to protoc. For example: docker run --rm confluentinc/cp-kafkacat kafkacat -b <your_kafka_broker> -t <name_of_dlq_topic> -C -D “” | protoc --decode=test_package.TestMessage path_to_proto/test.proto.
+
+
+
+
+# harness.io/skip-file-for-deploy
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Values.name }}
+  namespace: {{ .Values.namespace }}
+  annotations:
+  {{- if .Values.pcaCertEnabled }}
+    dynamo.certificate.tls/active: "false"
+    dynamo.certificate.cdb/active: "false"
+    pca.icb.tls/active: "true"
+  {{ else }}
+    dynamo.certificate.tls/active: "true"
+  {{- end }}
+
+  labels:
+  {{- with .Values }}
+  {{- include "icb-labels.labels" . | nindent 4 }}
+  {{end}}
+spec:
+  template:
+    metadata:
+      annotations:
+        sidecar.istio.io/inject: "false"
+        {{- if .Values.pcaCertEnabled }}
+        pca.icb.tls/active: "true"
+        dynamo.certificate.tls/active: "false"
+        dynamo.certificate.cdb/active: "false"
+      {{ else }}
+        dynamo.certificate.tls/active: "true"
+      {{ end }}
+    spec:
+      priorityClassName: platform-critical
+      securityContext:
+        fsGroup: 1000
+        runAsGroup: 1000
+        runAsUser: 1000
+      serviceAccountName: {{ .Values.serviceAccountName }}
+      automountServiceAccountToken: true
+      containers:
+        - name: vault-rds-user-init
+          resources:
+            requests:
+              memory: {{ .Values.memory.request }}
+              cpu: {{ .Values.cpu.request }}
+            limits:
+              memory: {{ .Values.memory.limit }}
+          image: {{ .Values.image.host }}/{{ .Values.image.rdsBootstrapPath }}:{{ .Values.image.rdsBootstrapVersion }}
+          imagePullPolicy: "IfNotPresent"
+          command: [ "/bin/bash" ]
+          args:
+            # Avoid "ecx" here, as that will expose secret data to logs.
+            - "-ec"
+            - >-
+              export HOME=/tmp;
+              cd tmp;
+              mkdir .aws;
+              VAULT_DB_DATA=`aws rds describe-db-clusters --region {{ .Values.region }} --db-cluster-identifier db-105250-0000ie-{{ .Values.environment }}-tnn-core-vault-cluster | jq -r '.DBClusters[0]'`;
+              DB_AUTH_SECRET=`echo ${VAULT_DB_DATA} | jq -r '.MasterUserSecret.SecretArn'`;
+              export DB_HOST=`echo $VAULT_DB_DATA | jq -r '.Endpoint'`;
+              export DB_PORT=`echo $VAULT_DB_DATA | jq -r '.Port'`;
+              AUTH_INFO=`aws secretsmanager get-secret-value --region {{ .Values.region }} --secret-id $DB_AUTH_SECRET | jq -r '.SecretString'`;
+              export DB_USERNAME=`echo $AUTH_INFO | jq -r '.username'`;
+              export PGPASSWORD=`echo $AUTH_INFO | jq -r '.password'`;
+              export DB_NEWPASS=`uuidgen`;
+              isUserExist=`psql -X -A -h $DB_HOST -U $DB_USERNAME -t -c "SELECT 1 FROM pg_catalog.pg_roles WHERE rolname='vault_admin';"`;
+              if [[ $isUserExist == 1 ]]; then
+                  echo "User already exists. Altering the password for the user";
+                  psql -h $DB_HOST -U $DB_USERNAME -c "ALTER USER vault_admin WITH PASSWORD '$DB_NEWPASS';";
+              else
+                  echo "Creating user and granting rds superuser priveleges";
+                  psql -h $DB_HOST -U $DB_USERNAME -c "CREATE USER vault_admin WITH PASSWORD '$DB_NEWPASS' CREATEDB CREATEROLE;";
+                  psql -h $DB_HOST -U $DB_USERNAME -c "GRANT rds_superuser TO vault_admin;";
+              fi;
+              isDBExist=`psql -X -A -h $DB_HOST -U $DB_USERNAME -t -c "SELECT 1 FROM pg_catalog.pg_database WHERE datname='vault_admin';"`;
+              if [[ $isDBExist != 1 ]]; then
+                echo "Creating database";
+                psql -h $DB_HOST -U $DB_USERNAME -c "CREATE DATABASE vault_admin;";
+              else
+                echo "Database already exists. Skipping the database creation";
+              fi;
+              if [[ "$USE_BLUE_GREEN" == "true" ]]; then 
+                export TARGET_ENDPOINT="blue-green.vault-aurora.dynamo.{{ .Values.env_code }}.eu-west-1.aws.jpmchase.net";
+              else
+                export TARGET_ENDPOINT=$DB_HOST;
+              fi;
+              echo "Storing the database credentials in Hault";
+              export K8T=`cat /var/run/secrets/kubernetes.io/serviceaccount/token`;
+              export JSON_SECRET="{\""$TARGET_ENDPOINT"\":\""$DB_NEWPASS"\"}";
+              export VTOKEN=`curl -k -s --request POST --data '{"jwt": "'$K8T'", "role": "vault-operator-role"}' https://hault.105250-core-hault.svc.cluster.local:8200/v1/auth/kubernetes/login | jq -r '.auth.client_token'`;
+
+              curl -k -s -X POST -H "X-Vault-Token:$VTOKEN" -d "$JSON_SECRET" https://hault.105250-core-hault.svc.cluster.local:8200/v1/secret/dev/root-db-secrets;
+
+              exit 0;
+          lifecycle:
+            # as advised by Ahsan, adding this to cope with 5 second log scraping interval.
+            preStop:
+              exec:
+                command:
+                  - sh
+                  - -c
+                  - "sleep 10"
+          env:
+            - name: AWS_REGION
+              value: {{ .Values.region }}
+            - name: AWS_DEFAULT_REGION
+              value: {{ .Values.region }}
+            - name: AWS_STS_REGIONAL_ENDPOINTS
+              value: "regional"
+            - name: NAMESPACE
+              value: {{ .Values.namespace }}
+            - name: USE_BLUE_GREEN
+              value: {{ .Values.use_blue_green | quote }}
+      restartPolicy: Never
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 600
+
+
+
+Created by Ihor Khlaponin, last modified on May 22, 2024
+New PCA Support Chat
+
+IMPORTANT!
+
+This page describes mTLS settings to connect with Kafka using cert-manager PCA.
+
+Legacy PCA approach is DEPRECATED and will be decommissioned soon.
+
+
+
+Known limitations
+Enable mTLS for new Kafka or Cockroach client app
+Cockroach connection
+Migration from Legacy PCA to the New Cert-Manager PCA approach
+Which user principal is used by Kafka clients (consumers/producers)
+What if you use jobs with auto-generated suffix
+Certificates rotation
+How do I check when the certificate is going to expire
+What if I don't need certificates at all?
+
+
+This article describes the steps you need to take to enable SSL for Kafka clients. This is written to be implemented in Spring microservices, but could also serve as a guide for other Kafka related applications.
+
+Our Kafka clusters use mTLS, that means that both the server and the client hold a certificate that is signed by the Certificate Authority (CA). On establishing the connection, both the broker checks the client certificate, and the client checks the broker certificate. The checking is done by checking whether the certificate is signed by a CA that we have in the trust store. On the client side, we also check that the bootstrap server address is in the SAN part of the certificate.
+
+
+
+So, to enable mTLS on the client side you need two pieces:
+
+certificates
+application configuration (usually in application.yaml for Spring Boot apps)
+
+
+Known limitations
+IMPORTANT
+
+cert-manager has a hard limit on the CN length. Therefore, the total length of deployment name + namespace name cannot exceed 63 characters.
+We have a kyverno policy which will prevent any deployments which violate this rule.
+Enable mTLS for new Kafka or Cockroach client app
+To enable new certificates, we need to add the next annotations to your Deployment/StatefulSet/Job:
+
+metadata:
+  name: test-service
+  namespace: test
+  annotations:
+    dynamo.certificate.tls/active: "false"  # this annotation will disable old PCA webhook
+    dynamo.certificate.cdb/client: "false"  # this annotation will disable old PCA webhook for CDB
+    pca.icb.tls/active: "true"              # this annotation will enable new PCA webhook
+Certificates will be generated automatically for K8S Deployments, StatefulSets and Jobs and will be mounted into each pod by mutating web hook.
+
+Certificates will be located inside /certs/ subfolder inside each container within the pod.
+
+List of available certificates/keys:
+
+$ ls /certs/
+ca.crt  key.der  keystore.jks  keystore.p12  tls.crt  tls.key  truststore.jks  truststore.p12
+So, all we need to do is to configure an application to use them
+
+In your application.yaml file, use the following parameters:
+
+spring:
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:core-kafka.105250-kafka.svc.cluster.local:9092}
+    ssl:
+      key-store-location: file:///certs/keystore.p12
+      key-store-password: ${CERT_KEY_STORE_PASSWORD}
+      key-store-type: PKCS12
+      trust-store-location: file:///certs/truststore.p12
+      trust-store-password: ${CERT_KEY_STORE_PASSWORD}
+    producer:
+      value-serializer: io.confluent.kafka.serializers.KafkaAvroSerializer
+    properties:
+      schema.registry.url: ${SCHEMA_REGISTRY_URL:https://core-schema-registry.105250-kafka.svc.cluster.local:8081}
+      schema.registry.ssl.truststore.location: /certs/truststore.p12
+      schema.registry.ssl.truststore.password: ${CERT_KEY_STORE_PASSWORD}
+      schema.registry.ssl.keystore.location: /certs/keystore.p12
+      schema.registry.ssl.keystore.password: ${CERT_KEY_STORE_PASSWORD}
+      schema.registry.ssl.keystore.type: PKCS12
+      security.protocol: SSL
+      ssl.endpoint.identification.algorithm: ${KAFKA_HTTPS:https}
+
+
+NOTE
+
+We use the same password to encrypt the trust store and key store in p12 and jks formats.
+
+That password is available as a CERT_KEY_STORE_PASSWORD environment variable and will be generated and injected into your pod automatically by mutating the webhook.
+
+Cockroach connection
+After successfully applying your manifest, you will have certificates generated and stored in /certs/ folder in your pod.
+
+These certificates are in PEM format and private key encoding in PKCS#1 or PKCS#8 and PKCS#12 (JKS) format. The connectivity test to CDB using the cockroach command line tool:
+
+cdb connection test
+bash-4.4$ cockroach sql --user=borrow_account_closure_service --host cockroach-public --certs-dir=/certs/
+#
+# Welcome to the CockroachDB SQL shell.
+# All statements must be terminated by a semicolon.
+# To exit, type: \q.
+#
+# Server version: CockroachDB CCL v22.2.13 (x86_64-pc-linux-gnu, built 2023/08/08 18:12:38, go1.19.6) (same version as client)
+# Cluster ID: 0cba49ba-dba5-4af5-ba4e-aa7508d45fa2
+# Organization: JPMC-GTI
+#
+# Enter \? for a brief introduction.
+#
+borrow_account_closure_service@cockroach-public:26257/defaultdb>
+To connect a Java application to CockroachDB, you should use certificates in the PEM format, which is the format typically used by CockroachDB for its certificates. However, Java's standard way of handling SSL/TLS connections is through its own KeyStore format (JKS).
+
+Here's a general template of how the JDBC URL might look when using a PKCS#12 keystore:
+
+jdbc:databaseType://host:port/databaseName?sslmode=mode?sslrootcert=path_to_ca_certificate?sslcert=path_to_client_certificate?sslkey=path_to_client_key
+Here's what it will look like when you obtain certificates:
+
+jdbc:postgresql://cockroach-public:26257/<SERVICE_NAME>?sslmode=verify-full&sslrootcert=/certs/ca.crt&sslcert=/certs/tls.crt&sslkey=/certs/key.der&tcpKeepAlive=true&ApplicationName=<SERVICE_NAME>
+r2dbc:postgresql://cockroach-public:26257/<SERVICE_NAME>?sslmode=verify-full&sslrootcert=/certs/ca.crt&sslcert=/certs/tls.crt&sslkey=/certs/tls.key&tcpKeepAlive=true&ApplicationName=<SERVICE_NAME>
+IMPORTANT NOTE
+
+If you used .der key with old PCA, please continue using it for new PCA. Same goes for pkcs1 (.pem)  keys. That is because your DB library expects a specific key format and may throw errors in case it is different
+
+
+
+Migration from Legacy PCA to the New Cert-Manager PCA approach
+If you already use the legacy PCA approach, you should do the following steps:
+
+Add required annotations to Deployment/Job/StatefulSet metadata:
+
+metadata:
+  name: test-service
+  namespace: test
+  annotations:
+    dynamo.certificate.tls/active: "false"  # this annotation will disable old PCA webhook for Kafka
+    dynamo.certificate.cdb/client: "false"  # this annotation will disable old PCA webhook for CDB
+    pca.icb.tls/active: "true"              # this annotation will enable new PCA webhook
+Remove the init container from your Deployment/StatefulSet/Job, which is described in the legacy PCA here
+
+ Remove init container
+Remove additional volume mounts
+
+ Remove redundant volume mounts
+Modify paths to the key store and trust store in application.yaml
+
+key-store-location: file:///certs/keystore.p12
+key-store-password: ${CERT_KEY_STORE_PASSWORD}
+trust-store-location: file:///certs/truststore.p12
+trust-store-password: ${CERT_KEY_STORE_PASSWORD}
+a. If you use Schema registry, please update the properties section for schema registry SSL connection
+
+kafka:
+   properties:
+     schema.registry.url: ${SCHEMA_REGISTRY_URL:https://core-schema-registry.105250-kafka.svc.cluster.local:8081}
+     schema.registry.ssl.truststore.location: /certs/truststore.p12
+     schema.registry.ssl.truststore.password: ${CERT_KEY_STORE_PASSWORD}
+     schema.registry.ssl.keystore.location: /certs/keystore.p12
+     schema.registry.ssl.keystore.password: ${CERT_KEY_STORE_PASSWORD}
+     schema.registry.ssl.keystore.type: PKCS12
+     security.protocol: SSL
+     ssl.endpoint.identification.algorithm: ${KAFKA_HTTPS:https}
+If you use CockroachDB, please update the jdbc connection string
+
+jdbc:postgresql://cockroach-public:26257/<SERVICE_NAME>?sslmode=verify-full&sslrootcert=/certs/ca.crt&sslcert=/certs/tls.crt&sslkey=/certs/key.der&tcpKeepAlive=true&ApplicationName=<SERVICE_NAME>
+or
+r2dbc:postgresql://cockroach-public:26257/<SERVICE_NAME>?sslmode=verify-full&sslrootcert=/certs/ca.crt&sslcert=/certs/tls.crt&sslkey=/certs/tls.key&tcpKeepAlive=true&ApplicationName=<SERVICE_NAME>
+IMPORTANT NOTE
+
+If you used .der key with old PCA, please continue using it for new PCA. Same goes for pkcs1 (.pem)  keys. That is because your DB library expects a specific key format and may throw errors in case it is different
+
+Example of change may be found here
+
+Which user principal is used by Kafka clients (consumers/producers)
+The user principal, used for Kafka authorization, is derived from the certificate common name (CN) based on core-kafka SSL mapping rules.
+
+For example:
+
+CN from the certificate, which can be viewed by logging into the service container in the pod.
+
+$ openssl x509 -in /certs/tls.crt -text | grep "CN ="
+        Issuer: C = US, O = JPMC, OU = Dynamo, ST = New York, CN = dynamo.dev.eu-west-1.aws.jpmchase.net, L = New York
+        Subject: CN = movemoney-stip-balance-updater-service.svc.cluster.local
+The CN is then given to the SSL mapping rule RULE:^CN=([a-zA-Z0-9\\-_]*)\\..*/$1/  which captures the principal name as movemoney-stip-balance-updater-service in the above example.
+
+What if you use jobs with auto-generated suffix
+If you create a job with a randomly generated suffix, the CN for it will also contain that suffix.
+
+Because of that, user principle won't match with the ACL rule, and your pod will not be able to communicate with the topic. You may find more details about it here.
+
+To fix that, we will need to apply additional SSL mapping rules which require brokers to restart. Therefore, you need to create a support ticket to the CPE Platform team and request this change.
+
+Please create a support ticket using go/coredsd or go/cpedsd
+
+Certificates rotation
+cert-manager is capable to update certificates automatically. Once certificate reaches renewal date, cert-manager will automatically issue a new certificate and push the changes to the kubernetes secrets. By default, certificate age is configured to 365 days, and certificate will be renewed when it is 270 days old. There is a feature request to configure certificate age through the annotations ( DYN-495655 - certificate duration from annotations To Do )
+
+
+
+To be able to use new certificate, you need to restart the pods for your Deployment/StatefulSet/Job.
+
+NOTE: in legacy PCA implementation, you had to trigger the updates for Deployments, StatefulSets or Jobs to get a new certificate (normally, by adding a new label). Now, it is not required.
+
+
+We recommend terminating your program with system exit code 1 in case of SSL handshake issue so that the pod will be restarted automatically by Kubernetes in case of certificate expiration
+How do I check when the certificate is going to expire
+Whenever you use cert-manager PCA, a new Certificate custom resource will be created with the name of your Deployment/StatefulSet/Job
+
+$ kubectl get certificate -n 105250-kafka
+NAME                        READY   SECRET                           AGE
+core-kafka-topic-operator   True    core-kafka-topic-operator-cert   7d
+You may describe the certificate.
+
+$ kubectl describe certificate -n 105250-kafka core-kafka-topic-operator
+Its status will show the expiration date as well as the renewal date, and if it is not expired (check the Status and Message fields):
+
+
+
+You may notice that renewal time is earlier than the expiration date (Not After section) as described in the section above.
+
+What if I don't need certificates at all?
+Old PCA implementation was issuing and injecting certificates for all Deployments, StatefulSets and Jobs by default no matter you use them or not.
+
+New PCA implementation, in contrary, enables the certificates injection only when you specified required annotation (as mentioned in sections above)
+
+If your application does not need any certificates (for Kafka or CDB), you should explicitly disable them.
+
+To do that, simply add the next annotations:
+
+metadata:
+  name: test-service
+  namespace: test
+  annotations:
+    dynamo.certificate.tls/active: "false"  # this annotation will disable old PCA webhook for Kafka
+    dynamo.certificate.cdb/client: "false"  # this annotation will disable old PCA webhook for CDB
+    pca.icb.tls/active: "false"             # this annotation will disable new PCA webhook
+Alternatively, add label pca.icb.gencert/webhook: "ignore" to the namespace where your resource is located, in this case new PCA webhook will ignore all resources in this namespace.
+
+
+
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: "core-vault-webhooks.dynamo.jpmorgan.com"
+  labels:
+    {{- with .Values }}
+    {{- include "icb-labels.labels" . | nindent 4 }}
+    {{- end}}
+webhooks:
+  - name: "a-tls-cert-annotation.dynamo.jpmorgan.com"
+    rules:
+      - apiGroups: [ "*" ]
+        apiVersions: [ "*" ]
+        operations: [ "CREATE","UPDATE" ]
+        resources: [ "deployments","jobs","statefulsets" ]
+    namespaceSelector:
+      matchLabels:
+        core-vault-webhooks-tls: enabled
+    clientConfig:
+      service:
+        name: core-vault-webhooks
+        namespace: 105250-core-vault-webhooks
+        port: 8080
+        path: /api/v1/tls-cert-annotation
+    # Current version of fabric8 is dictated by Spring Cloud: 4.10.3 only supports v1beta1 
+    admissionReviewVersions: [ "v1" ]
+    timeoutSeconds: 30
+    sideEffects: NoneOnDryRun
+  - name: "resource-limit.dynamo.jpmorgan.com"
+    rules:
+      - apiGroups: [ "*" ]
+        apiVersions: [ "*" ]
+        operations: [ "CREATE","UPDATE" ]
+        resources: [ "pods" ]
+    namespaceSelector:
+      matchLabels:
+        core-vault-webhooks-resource-limit: enabled
+    clientConfig:
+      service:
+        name: core-vault-webhooks
+        namespace: 105250-core-vault-webhooks
+        port: 8080
+        path: /api/v1/resource-limit
+    # Current version of fabric8 is dictated by Spring Cloud: 4.10.3 only supports v1beta1
+    admissionReviewVersions: [ "v1" ]
+    timeoutSeconds: 30
+    sideEffects: NoneOnDryRun
+  - name: "vault-addr.dynamo.jpmorgan.com"
+    rules:
+      - apiGroups: [ "*" ]
+        apiVersions: [ "*" ]
+        operations: [ "CREATE","UPDATE" ]
+        resources: [ "pods" ]
+    namespaceSelector:
+      matchLabels:
+        core-hault-addr: enabled
+    clientConfig:
+      service:
+        name: core-vault-webhooks
+        namespace: 105250-core-vault-webhooks
+        port: 8080
+        path: /api/v1/vault-addr
+    admissionReviewVersions: [ "v1" ]
+    timeoutSeconds: 30
+    sideEffects: NoneOnDryRun
+  - name: "deployment-resiliency.dynamo.jpmorgan.com"
+    rules:
+      - apiGroups: [ "*" ]
+        apiVersions: [ "*" ]
+        operations: [ "CREATE","UPDATE" ]
+        resources: [ "deployments" ]
+    namespaceSelector:
+      matchLabels:
+        core-vault-webhooks-deployment-resiliency: enabled
+    clientConfig:
+      service:
+        name: core-vault-webhooks
+        namespace: 105250-core-vault-webhooks
+        port: 8080
+        path: /api/v1/deployment-resiliency
+    admissionReviewVersions: [ "v1" ]
+    timeoutSeconds: 30
+    sideEffects: NoneOnDryRun
+
+
