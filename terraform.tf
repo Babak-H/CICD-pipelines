@@ -1838,4 +1838,349 @@ variable "replication_target_force_original_owner" {
 
 
 
+data "aws_eks_cluster" "eks-cluster" {
+  name = local.cluster_name
+}
+# core-vault aurora
+data "aws_iam_policy" "aurora_password_secret" {
+  name = "${local.name_prefix}-replicadatabase-TMAuroraPasswordSecret"
+}
+
+data "aws_eks_cluster_auth" "cluster" {
+  name = data.aws_eks_cluster.eks-cluster.name
+}
+
+
+
+
+##################################################################
+# Create IAM Role for TM vault rds init
+###################################################################
+
+data "aws_iam_policy_document" "assume_role_with_oidc" {
+  statement {
+    effect = "Allow"
+    principals {
+      type        = "Federated"
+      identifiers = [local.oidc_arn]
+    }
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+    condition {
+      test     = "StringEquals"
+      values   = ["system:serviceaccount:${var.operators_namespace}:${var.vault_rds_sa_name}"]
+      variable = "${local.oidc_url}:sub"
+    }
+    condition {
+      test     = "StringEquals"
+      values   = ["sts.amazonaws.com"]
+      variable = "${local.oidc_url}:aud"
+    }
+  }
+}
+
+resource "aws_iam_role" "vault-rds-init-role" {
+  name                 = local.vault_rds_init_role_name
+  permissions_boundary = local.infradeployer_permission_boundary
+  assume_role_policy   = data.aws_iam_policy_document.assume_role_with_oidc.json
+}
+
+resource "aws_iam_role_policy_attachment" "vault_rds_init_role_aurora_password_secret" {
+  policy_arn = data.aws_iam_policy.aurora_password_secret.arn
+  role       = aws_iam_role.vault-rds-init-role.name
+}
+
+
+
+
+
+#####################################
+# LOCAL VALUES
+#####################################
+locals {
+  aws_assume_role                   = var.assume_role_format != "" ? format(var.assume_role_format, var.account_id, var.environment) : ""
+  name_prefix                       = "${var.seal_id}-${var.deployment_id}-${lower(var.environment)}"
+  cluster_name                      = "dn-${lower(var.environment)}-vault"
+  oidc_url                          = replace(data.aws_eks_cluster.eks-cluster.identity[0].oidc[0].issuer, "https://", "")
+  oidc_arn                          = format("arn:aws:iam::%s:oidc-provider/%s", var.account_id, local.oidc_url)
+  infradeployer_permission_boundary = "arn:aws:iam::${var.account_id}:policy/pave/infradeployer/${var.seal_id}-EMEA-${var.environment}-INFRADEPLOYER/permissions_boundary/${var.seal_id}-EMEA-${var.environment}-INFRADEPLOYER-permissionBoundary"
+  vault_rds_init_role_name          = "${local.name_prefix}-TMAuroraRdsInitRole"
+}
+
+
+
+
+
+#####################################
+# MODULE
+#####################################
+module "sys_res_env" {
+  source = "../modules/naming"
+
+  environment = var.environment
+}
+
+module "naming" {
+  source = "git::https://bitbucket.dynamo.prd.aws.jpmchase.net/scm/terra/terraform-dynamo-aws-com-object-naming.git?ref=v0.2.6"
+
+  dev_res_for_id       = var.seal_id
+  dyn_res_appname      = "tm_vault"
+  dyn_res_appcomponent = "vault-aws-init"
+  dyn_res_env          = var.environment
+  fin_res_chg_id       = "313031"
+  dyn_res_mon          = "1"
+  sys_res_env          = module.sys_res_env.sys_res_env
+
+}
+
+module "add_oidc_to_sa" {
+  source = "../modules/oidc"
+
+  providers = {
+    aws = aws
+  }
+
+  environment              = var.environment
+  account_id               = var.account_id
+  seal_id                  = var.seal_id
+  deployment_id            = var.deployment_id
+  serviceaccount_name      = var.serviceaccount_name
+  serviceaccount_namespace = var.vault_namespace
+  role_name                = "vault-installer"
+  tags                     = module.naming.tags
+}
+
+
+
+
+
+
+output "role_id" {
+  description = "The role's ID"
+  value       = module.add_oidc_to_sa.role_id
+}
+
+output "role_arn" {
+  description = "The ARN assigned by AWS to this role"
+  value       = module.add_oidc_to_sa.role_arn
+}
+
+output "role_name" {
+  description = "The name of the role"
+  value       = module.add_oidc_to_sa.role_name
+}
+
+
+
+
+
+
+variable "environment" {
+  description = "Short code for the environment"
+  type        = string
+}
+
+variable "region" {
+  description = "AWS Region"
+  type        = string
+  default     = "eu-west-1"
+}
+
+variable "account_id" {
+  description = "The AWS Account ID to deploy the System Resources"
+  type        = string
+}
+
+variable "seal_id" {
+  description = "SEAL id for Dynamo"
+  type        = string
+  default     = "105250"
+}
+
+variable "deployment_id" {
+  description = "Deployment ID for the Environment/Dynamo combination"
+  type        = string
+  default     = "0000ie"
+}
+
+variable "vault_namespace" {
+  type        = string
+  description = "Vault Namespace in the cluster"
+  default     = "105250-core-vault"
+}
+
+variable "serviceaccount_name" {
+  type        = string
+  description = "name of K8s service account to associate with IAM role"
+  default     = "vault-installer-sa"
+}
+
+variable "operators_namespace" {
+  description = "K8s namespace of the operators installation."
+  type        = string
+  default     = "105250-vault-operators"
+}
+
+variable "vault_rds_sa_name" {
+  description = "K8s service account to associate with IAM role (rds init)"
+  type        = string
+  default     = "vault-rds-init-sa"
+}
+
+variable "assume_role_format" {
+  description = "Format of the role that will be assumed. Might be set to null to use the current role (not assume)"
+  type        = string
+  default     = "arn:aws:iam::%s:role/pave/infradeployer/105250-EMEA-%s-INFRADEPLOYER"
+}
+
+
+
+
+
+
+#####################################
+# CONFIGURATIONS
+#####################################
+terraform {
+  required_version = ">= 1.0.7"
+  required_providers {
+    aws        = ">= 3.8.0"
+    kubernetes = ">= 2.20.0"
+  }
+
+  # To run locally, init the backend with the following: tf init -backend-config=..\backends\LOCAL.tf
+  backend "s3" {
+    region  = "eu-west-1"
+    encrypt = true
+    key     = "tnn_core_vault/vault_aws_init.tfstate"
+  }
+}
+
+provider "aws" {
+  region = var.region
+  assume_role {
+    role_arn = local.aws_assume_role
+  }
+}
+
+provider "kubernetes" {
+  host                   = data.aws_eks_cluster.eks-cluster.endpoint
+  cluster_ca_certificate = base64decode(data.aws_eks_cluster.eks-cluster.certificate_authority[0].data)
+  token                  = data.aws_eks_cluster_auth.cluster.token
+}
+
+
+
+
+
+
+
+data "aws_iam_policy_document" "assume_role_with_oidc" {
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+    principals {
+      type = "Federated"
+      identifiers = [
+        local.kubernetes_oidc_arn
+      ]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "${local.kubernetes_oidc_url}:sub"
+      values = [
+        "system:serviceaccount:${var.serviceaccount_namespace}:${var.serviceaccount_name}"
+      ]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "${local.kubernetes_oidc_url}:aud"
+      values   = ["sts.amazonaws.com"]
+    }
+  }
+}
+
+data "aws_eks_cluster" "eks-cluster" {
+  name = local.cluster_name
+}
+
+data "aws_eks_cluster_auth" "cluster" {
+  name = local.cluster_name
+}
+
+data "aws_caller_identity" "current" {}
+
+
+
+
+locals {
+  cluster_name                  = var.vault_suffix_flag ? "dn-${lower(var.environment)}-vault" : "dn-${lower(var.environment)}"
+  role_name                     = "${var.seal_id}-${var.deployment_id}-${lower(var.environment)}-${var.role_name}"
+  role_permissions_boundary_arn = "arn:aws:iam::${var.account_id}:policy/pave/infradeployer/${var.seal_id}-EMEA-${var.environment}-INFRADEPLOYER/permissions_boundary/${var.seal_id}-EMEA-${var.environment}-INFRADEPLOYER-permissionBoundary"
+  kubernetes_oidc_url           = replace(data.aws_eks_cluster.eks-cluster.identity[0].oidc[0].issuer, "https://", "")
+  kubernetes_oidc_arn           = format("arn:aws:iam::%s:oidc-provider/%s", data.aws_caller_identity.current.account_id, local.kubernetes_oidc_url)
+}
+
+resource "aws_iam_role" "iam_role" {
+  name                 = local.role_name
+  path                 = "/"
+  permissions_boundary = local.role_permissions_boundary_arn
+  assume_role_policy   = data.aws_iam_policy_document.assume_role_with_oidc.json
+  tags                 = var.tags
+}
+
+resource "kubernetes_service_account" "irsa" {
+  metadata {
+    name      = var.serviceaccount_name
+    namespace = var.serviceaccount_namespace
+    annotations = {
+      "eks.amazonaws.com/role-arn" = aws_iam_role.iam_role.arn
+    }
+  }
+}
+
+
+
+
+
+
+
+
+
+
+#Get VPC
+data "aws_cloudformation_export" "vpc_id" {
+  name = "core-Vpc01-Id"
+}
+
+
+resource "aws_route53_zone" "private" {
+  name    = "vault-aurora.dynamo.${var.environment_url}.${var.region}.aws.jpmchase.net"
+  comment = "Record for TM Vault Aurora RDS blue-green"
+
+  vpc {
+    vpc_id = data.aws_cloudformation_export.vpc_id.value
+  }
+
+  tags = (
+    var.tags
+  )
+}
+
+resource "aws_route53_record" "vault-aurora-blue-green" {
+  zone_id = aws_route53_zone.private.zone_id
+  name    = "blue-green"
+  type    = "CNAME"
+  ttl     = 10
+
+  weighted_routing_policy {
+    weight = 100
+  }
+  set_identifier = "blue-green"
+  records        = var.target == "blue" ? [var.blue_db] : [var.green_db]
+}
+
+
+
+
 
