@@ -2160,3 +2160,314 @@ Refer to the Change Quality Review Playbook for examples of good vs bad changes
 
 
 Raft storage: https://developer.hashicorp.com/vault/docs/configuration/storage/raft
+
+
+
+
+$ git --version
+$ git config --global http.proxy http://proxy.jpmchase.net:10443
+$ git config --global https.proxy http://proxy.jpmchase.net:10443
+$ export ALL_PROXY=proxy.jpmchase.net:10443
+
+$ pip3 --version
+$ where pip3
+pip3 config set global.trusted-host "artifacts-read.gkp.jpmchase.net"
+
+
+sonar qube activation:
+
+#setup.cfg
+[flake8]
+extend-ignore = E501
+
+[tool.isort]
+profile = "black"
+
+[tool:pytest]
+addopts = --verbose --doctest-modules --junitxml="python-test-report.xml" --cov-report=html --cov-report=term --cov=src
+pythonpath = src
+
+[coverage:report]
+exclude_also =
+    if __name__ == .__main__.:
+
+
+
+#sonar-project.properties
+sonar.sources=src
+sonar.python.coverage.reportPaths=generated/coverage_report.xml
+sonar.tests=tests
+
+
+# Jenkinsfile
+@Library(['dynamo-shared-lib', 'services-shared-lib']) _
+def podTemplateYaml = libraryResource('python310-kaniko.yaml')
+
+buildAndDeployPythonMultiApp {
+    coverageToolSourceDir = 'src'
+    revision = '1.0'
+    kubernetesLabel = 'python-svc'
+    kubernetesYaml = podTemplateYaml
+    gitProjectKey = 'SRE'
+    gitRepositoryName = 'icb-ledgers-vault-monitoring'
+    spinnakerWebhookName = 'tm-vault-cert-monitor'
+    emailOnFailure = "tushar.shah@jpmorgan.com"
+    projectSealId = '105250'
+    isRunSsapScan = true
+    isRunImageScan = true
+    isRunSonarQube = true
+    isRunSiCScan = true
+    useCoverageTool = true
+    waitForSsapScanResults = true
+}
+
+
+
+
+kafka:topic_consumer_group_lag_by_service{app!="", kubernetes_namespace!=""}
+
+topk(2, kafka_consumergroup_lag{topic=~"vault.core.contracts.journeys.account_schedule.responses"})
+
+topk(2, kafka_consumergroup_lag{consumergroup="vault.core.accounts.account_event_processor", topic="vault.core.account.events"})
+
+
+
+kubectl get --raw "/apis/custom.metrics.k8s.io/v1beta1/namespaces/105250-core-vault/deployments.apps/vault-postings-account-postings-processor/max_service_consumer_group_lag"
+
+{"kind":"MetricValueList","apiVersion":"custom.metrics.k8s.io/v1beta1","metadata":{},"items":[{"describedObject":{"kind":"Deployment","namespace":"105250-core-vault","name":"vault-postings-account-postings-processor","apiVersion":"apps/v1"},"metricName":"max_service_consumer_group_lag","timestamp":"2024-02-27T16:21:55Z","value":"0","selector":null}]}
+
+kubectl get --raw "/apis/custom.metrics.k8s.io/v1beta1/namespaces/105250-core-vault/deployments.apps/vault-ledger-balances-distribution-processor/max_service_consumer_group_lag"
+
+{"kind":"MetricValueList","apiVersion":"custom.metrics.k8s.io/v1beta1","metadata":{},"items":[{"describedObject":{"kind":"Deployment","namespace":"105250-core-vault","name":"vault-ledger-balances-distribution-processor","apiVersion":"apps/v1"},"metricName":"max_service_consumer_group_lag","timestamp":"2024-02-27T16:25:17Z","value":"0","selector":null}]}
+
+
+
+
+> kubectl get pod -n 105250-kafka
+> kubectl get pod core-kafka-toolkit-85f44bdd68-jqxc9 -n 105250-kafka
+> kubectl exec -it core-kafka-toolkit-85f44bdd68-jqxc9 -n 105250-kafka -- bash
+> ktl | grep vault.dummy.cg.placeholder
+> ktl | grep vault.core_api.v1.accounts.account_schedule_job_execution_failure
+
+
+kubectl get kt -n 105250-core-vault
+
+
+
+after consulting with TM team, we figured that max_consumer_group_lag is already available either through kubernetes query or tm-metrics thanos, and for 3 deployments that the metric is not available (vault-payment-order-processor, contract-secondary-directives-committer, plan-schedule-executor) the lack of metrics is due to very low or non-existent traffic that they receive.
+
+
+
+sum by(kubernetes_namespace)(  increase(scheduler_job_publish_lag_seconds_count{kubernetes_cluster="$cluster", kubernetes_namespace=~"$kubernetes_namespace"}[2m]))
+
+
+sum by(kubernetes_namespace)(
+  increase(scheduler_job_publish_lag_seconds_count{kubernetes_cluster=~"dn-pcore-vault.*", kubernetes_namespace=~"105250-core-vault"}[$rate])
+)
+
+
+Aurora global has several advantages when it comes to read latency.
+
+first it can have several read clusters in different regions which can reduce the latency of read operations in those regions (however since all our customers are in western Europe at the moment it is not very significant advantage for us).
+
+second, you can scale different read clusters separately based on the throughput and user activity in that specific region, independently from other read-clusters in other regions.
+
+
+
+however read operations in secondary clusters will have more delays compared to primary region cluster.
+
+
+Aurora global will increase resiliency for read operations, as it can have read instances in up to 5 different regions, however write instance can only be in one region (same as normal aurora cluster). we have the option of failover to another region and promoting it to writer cluster. such operation is expected to be done in matter of minutes (so a few minutes of outage), however You can only perform a managed cross-Region database failover on an Aurora global database if the primary and secondary DB clusters have the same major, minor, and patch level engine versions. otherwise such operation will fail.
+
+its also worth mentioning that due to connection between primary and secondary regions being asynchronous, there might be some outdated results on the new primary node.
+
+
+
+our database cluster uses username/password with aws secretmanager for accessing password, but such feature is NOT available on global aurora, which makes using it impossible for us at the moment.
+
+also automatic minor version upgrade and change of parameter group while upgrading database version, is NOT available on global aurora cluster and it can't use Serverless-v1 databases, only serverless-v2.
+
+
+
+
+EKS cluster => currently these set of resources do not exist in other regions in EU and need to be created before vault initialization step ( creation of EKS cluster might break the active-passive hot-cold design model).
+
+
+
+Permission Boundary, Infra deployer => these set of policies should be set to allow the deployment of further resources in the new region and availability zones
+
+
+
+Service Account for RDS , Aurora secret Policy => since Vault init uses these values from Aurora and RDS, there is an issue that how can Aurora database be implemented in this new region. as Global aurora is currently not usable, are we allowed to create separate new cluster and synchronize it with the one in Ireland region?
+
+https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/AuroraMySQL.Replication.CrossRegion.html
+
+
+
+S3 => new buckets should be deployed for backup of vault init in the new region, can be synchronized via data replication from existing S3 buckets
+
+
+
+resources that need to exist in the second region for vault initialization:
+
+AWS Account
+
+Dynamo Seal ID
+
+EKS Cluster (namespace, operator,..)
+
+Service Account
+
+Permission Boundary, Infra deployer
+
+Service Account for RDS , Aurora secret Policy
+
+S3 bucket for backup
+
+
+
+count(kube_pod_status_phase{phase="Running", kubernetes_cluster="dn-icore-vault.dynamo.eng.eu-west-1.aws.jpmchase.net"} == 1)
+
+count(kube_pod_status_phase{phase="Running"} == 1)
+
+sum(max without(instance)(kube_node_status_condition{kubernetes_cluster="$cluster", condition="Ready",status="true"})) / sum(max without(instance)(kube_node_status_condition{kubernetes_cluster="$cluster", condition="Ready"}))
+
+avg ( count by (label_failure_domain_beta_kubernetes_io_zone) (project:app:pod_zone{kubernetes_cluster="$cluster", namespace=~"$namespace"})) by (label_failure_domain_beta_kubernetes_io_zone)
+
+prometheus_tsdb_head_series()
+
+group by (topic) ({topic=~".*\\.(dlq|failures)$",k8scluster="dn-ncore-vault", namespace="105250-core-vault"})
+
+sum by(app)(100*rate(PostingsProcessor_StageBatchRejectionCounter{kubernetes_cluster="dn-ncore-vault.dynamo.test.eu-west-1.aws.jpmchase.net"}[10m]))/sum(rate(PostingsProcessor_BatchRequestCounter{ kubernetes_cluster=~"dn-ncore-vault.dynamo.test.eu-west-1.aws.jpmchase.net"}[10m])) by (app)
+
+
+sum(ALERTS{alertstate="firing"}) or vector(0)
+
+
+sum by (topic, group) (max without (instance) (kafka_burrow_partition_lag{group=~"vault.*|ep.*|scheduler.*|integration.*"}))
+sum by (topic, group) (delta(kafka_burrow_partition_lag{group=~"vault.*|ep.*|scheduler.*|integration.*"}[30m]))
+
+sum by (topic)(increase(kafka_burrow_topic_partition_offset{topic=~"^(scheduler|vault)(\\.[a-zA-Z0-9_]+)+(\\.dlq|\\.failures)$",icb_jpmorgan_com_squad="ICB_Ledgers", namespace="105250-core-vault"}[10m]))
+
+
+
+histogram_quantile(0.99, sum by (le, kubernetes_namespace, app) (rate(database_client_query_duration_seconds_bucket{project="vault",service!="vault-ledger-balances-watermark-processor"}[10m])))
+histogram_quantile(0.9, sum by (le, kubernetes_namespace, app) (rate(database_client_query_duration_seconds_bucket{project="vault",service!="vault-ledger-balances-watermark-processor"}[10m])))
+
+
+http_server_requests_seconds_bucket{app="borrow-fa-gateway", aws_account_name="ECORE", container="service", endpoint="http-actuator", env="uat", exception="DynamoClientException", instance="100.72.125.114:9090", job="105250-borrow/borrow-fa-gateway", k8scluster="dn-ecore", le="0.001048576", method="PUT", namespace="105250-borrow", outcome="CLIENT_ERROR", pod="borrow-fa-gateway-86dc4bcfdd-zhn5v", prometheus="monitoring/prometheus", prometheus_cluster="Dynamo-eu-west-1", prometheus_replica="prometheus-prometheus-0", region="eu-west-1", service="borrow-fa-gateway", status="404", uri="/api/v1/borrow/financial-assistance/gateway/customer/{customerId}/status/{statusId}", version="1.0.918"}
+
+
+http_client_requests_seconds_count{app="borrow-credit-card-graphql-service", aws_account_name="ECORE", client_name="borrow-collections-service.105250-borrow.svc.cluster.local", container="service", endpoint="http-actuator", env="uat", instance="100.72.125.197:9090", job="105250-borrow/borrow-credit-card-graphql-service-pod-monitor", k8scluster="dn-ecore", method="POST", namespace="105250-borrow", outcome="CLIENT_ERROR", pod="borrow-credit-card-graphql-service-5bb49769-v2pgx", prometheus="monitoring/prometheus", prometheus_cluster="Dynamo-eu-west-1", prometheus_replica="prometheus-prometheus-0", region="eu-west-1", service="borrow-credit-card-graphql-service", status="404", uri="/api/v1/borrow/collections/revolving-lines/{accountId}/auth-reinstatement", version="1.0.325"}
+
+http_client_requests_seconds_count{app="borrow-credit-card-graphql-service", aws_account_name="ECORE", client_name="borrow-collections-service.105250-borrow.svc.cluster.local", container="service", endpoint="http-actuator", env="uat", instance="100.72.125.197:9090", job="105250-borrow/borrow-credit-card-graphql-service-pod-monitor", k8scluster="dn-ecore", method="POST", namespace="105250-borrow", outcome="SERVER_ERROR", pod="borrow-credit-card-graphql-service-5bb49769-v2pgx", prometheus="monitoring/prometheus", prometheus_cluster="Dynamo-eu-west-1", prometheus_replica="prometheus-prometheus-0", region="eu-west-1", service="borrow-credit-card-graphql-service", status="500", uri="/api/v1/borrow/collections/revolving-lines/{accountId}/auth-reinstatement", version="1.0.325"}
+
+
+
+
+the issue was the the user we used to grant the execution of the function via postgres user, however that user was not the owner of pg_ls_waldir function and because of that the grant execution was failing.
+
+after we altered the ownership to add postgres as user, the issue was fixed and we managed to grant access to this function and fix the errors.
+
+fixed an all lower environments
+
+
+There is an issue related to prometheus_exporter node after enabling the PG_ADMIN role.
+
+
+
+kubectl get statefulset -n 105250-core-vault prometheus-postgres  Warning  PolicyViolation  42m (x2 over 42m)      kyverno-scan  policy require-memory-limits/autogen-validate-resources fail: validation error: Memory resource limits are required. rule autogen-validate-resources failed at path /spec/template/spec/containers/2/resources/limits/kubectl get pods -n 105250-core-vault | grep prometheus-postgres
+    State:       Waiting
+      Reason:    CrashLoopBackOff
+    Last State:  Terminated
+      Reason:    OOMKilled
+      Message:   "WAL segment loaded" segment=510 maxSegment=749
+ts=2024-07-23T07:58:56.074Z caller=head.go:783 level=info component=tsdb msg="WAL segment loaded" segment=511 maxSegment=749
+ts=2024-07-23T07:58:56.075Z caller=head.go:783 level=info component=tsdb msg="WAL segment loaded" segment=512 maxSegment=749
+ts=2024-07-23T07:58:56.075Z caller=head.go:783 level=info component=tsdb msg="WAL segment loaded" segment=513 maxSegment=749
+ts=2024-07-23T07:58:56.076Z caller=h
+ead.go:783 level=info component=tsdb msg="WAL segment loaded" segment=514 maxSegment=749
+ts=2024-07-23T07:58:56.076Z caller=head.go:783 level=info component=tsdb msg="WAL segment loaded" segment=515 maxSegment=749
+ts=2024-07-23T07:58:56.076Z caller=head.go:783 level=info component=tsdb msg="WAL segment loaded" segment=516 maxSegment=749
+ts=2024-07-23T07:58:56.077Z caller=head.go:783 level=info component=tsdb msg="WAL segment loaded" segment=517 maxSegment=749
+ts=2024-07-23T07:58:56.077Z caller=head.go:783 level=info component=tsdb msg="WAL segment loaded" segment=518 maxSegment=749
+ts=2024-07-23T07:58:56.139Z caller=head.go:783 level=info component=tsdb msg="WAL segment loaded" segment=519 maxSegment=749
+ts=2024-07-23T07:58:56.140Z caller=head.go:783 level=info component=tsdb msg="WAL segment loaded" segment=520 maxSegment=749
+ts=2024-07-23T07:58:56.140Z caller=head.go:783 level=info component=tsdb msg="WAL segment loaded" segment=521 maxSegment=749
+ts=2024-07-23T07:58:56.140Z caller=head.go:783 level=info component=tsdb msg="WAL segment loaded" segment=522 maxSegment=749
+ts=2024-07-23T07:58:56.140Z caller=head.go:783 level=info component=tsdb msg="WAL segment loaded" segment=523 maxSegment=749
+ts=2024-07-23T07:58:56.141Z caller=head.go:783 level=info component=tsdb msg="WAL segment loaded" segment=524 maxSegment=749
+ts=2024-07-23T07:58:56.141Z caller=head.go:783 level=info component=tsdb msg="WAL segment loaded" segment=525 maxSegment=749
+ts=2024-07-23T07:59:05.078Z caller=head.go:783 level=info component=tsdb msg="WAL segment loaded" segment=526 maxSegment=749
+
+
+
+kubectl exec -it -n 105250-vault-operators vault-tools-7bb8b958f7-l2k5l -- shpython3 blue-green-replication.py --blue-db="db-105250-0000ie-ncore-tnn-core-vault-cluster"  --green-db="db-105250-0000ie-ncore-tnn-core-vault-cluster" --mode=recreate_pg_stat_statementspython3 blue-green-replication.py --blue-db="db-105250-0000ie-dcore-tnn-core-vault-cluster" --green-db="db-105250-0000ie-dcore-tnn-core-vault-cluster" --mode=grant_pg_monitor
+
+
+kubectl get deployment -n 105250-core-vault-mon | grep promkubectl scale deployment prometheus-operator-105250-core-vault -n 105250-core-vault-mon --replicas=0kubectl scale statefulset prometheus-postgres -n 105250-core-vault --replicas=0kubectl get pvc -n 105250-core-vault | grep prometheus-postgreskubectl delete pvc -n 105250-core-vault prometheus-postgres-db-prometheus-postgres-0, prometheus-postgres-db-prometheus-postgres-1, prometheus-postgres-db-prometheus-postgres-2kubectl scale deployment prometheus-operator-105250-core-vault -n 105250-core-vault-mon --replicas=1
+
+
+
+
+
+there was another issue that was fixed: "pg_stat_statements.total_exec_time does not exist"
+
+by running this command:
+
+DROP EXTENSION IF EXISTS pg_stat_statements;
+CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
+
+
+
+based on responses from TM, we either have to add specific permissions to users to access this function or using the option on postgres to minimize the "wal_level" however this changes might cause some other issues that TM will not support or be responsible for if they happen.
+
+other option is upgrading to Vault version 5.2.7 which contains the fix to this issue. this seems to be the best option in our case.
+
+
+
+
+
+#!/usr/bin/env bash
+
+REPOSTING_URL="https://core-api.dn-${DYN_ENV}-vault.dynamo.${DYN_ENV_TYPE}.eu-west-1.aws.jpmchase.net/v1/post-posting-failures"
+REPOSTING_TOKEN=$(aws secretsmanager get-secret-value --secret-id 105250-0000ie-${DYN_ENV}-sa-reposting-vault-tools-tennessee-token | jq -r '.SecretString' | jq -r ".token1")
+
+function usage_reposting() {
+  echo "Usage: $0 [-a accountId -f failuresFile]"
+  echo " -a: Filtering account_id [optional]"
+  echo " -f: Failures file to reposting [optional]"
+  echo " -r: Filtering reason [optional]"
+  echo " -h: help"
+  exit 1
+}
+
+while getopts a:f:r:h flag
+do
+  case "${flag}" in
+    a) ACCOUNT_ID_REPOSTING_ARG=${OPTARG};;
+    f) FAILURES_FILE_REPOSTING_ARG=${OPTARG};;
+    r) FAILURES_REASON_REPOSTING_ARG=${OPTARG};;
+    h) usage_reposting;; # Show the help
+  esac
+done
+
+if [[ -n "${FAILURES_FILE_REPOSTING_ARG}" ]]; then
+  export EXPORTED_RESULT_FAILURES=${FAILURES_FILE_REPOSTING_ARG}
+else
+  export ACCOUNT_ID_ARG=${ACCOUNT_ID_REPOSTING_ARG}
+  export FAILURE_REASON_LIST_ARG=${FAILURES_REASON_REPOSTING_ARG}
+  source $(dirname "$0")/vault_list_post_postings_failures.sh ${ACCOUNT_ID_REPOSTING_FILTER} ${FAILURES_REASON_REPOSTING_FILTER}
+fi
+
+cat $EXPORTED_RESULT_FAILURES | jq -R | jq -s | uniq \
+  | xargs -I '{}' -n1  curl -k "${REPOSTING_URL}:republish" -X POST -H "X-Auth-Token: ${REPOSTING_TOKEN}" -H "Content-Type: Application/Json" \
+    --data-binary "{\"account_id\": \"{}\",\"republish_type\": \"REPUBLISH_TYPE_REPUBLISH_BLOCKED_FAILURES\"}"
+
+
+
+
+https://www.reddit.com/r/cscareerquestions/comments/1fmcdz3/6_month_update_buddy_of_mine_completely_lied_in/
+https://www.reddit.com/r/cscareerquestions/comments/1bq2gu7/i_am_a_former_metagoogle_recruiter_i_think_lot_of/
+https://www.reddit.com/r/cscareerquestions/comments/1g9l83u/psa_please_do_not_cheat/
+https://www.reddit.com/r/devops/comments/hne5q0/getting_into_devops_as_a_b:eginner_is_tricky_my_50/
