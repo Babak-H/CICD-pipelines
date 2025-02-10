@@ -4330,6 +4330,51 @@ VOLUME /var/run/postgresql
 
 COPY ./release-artifacts/$TM_VAULT_VERSION/vaultctl /release-artifacts/vaultctl
 COPY ./release-artifacts/$TM_VAULT_VERSION/release.json /release-artifacts/release.json
+
+
+
+
+
+
+
+
+
+
+avg by (operation) (rate(service_requests{namespace="105250-borrow-temporal", service_name="frontend"}[5m]))
+
+
+sum by (activity_type) (rate(temporal_activity_execution_latency_seconds_count{namespace=~"105250-borrow", exported_namespace="borrow"}[1m]))
+
+sum by (operation) (rate(service_requests{operation=~"StartWorkflowExecution|SignalWorkflowExecution|SignalWithStartWorkflowExecution", namespace="105250-borrow-temporal"}[1m]))
+
+sum by (workflow_type) (rate(temporal_workflow_failed_total{namespace=~"105250-borrow", exported_namespace="borrow"}[1m]))
+
+
+sum by (workflow_type, task_queue) (rate(temporal_workflow_task_queue_poll_succeed_total{namespace=~"105250-borrow", exported_namespace="borrow"}[1m]))
+
+histogram_quantile(0.99, sum(rate(syncmatch_latency_bucket{namespace="105250-borrow-temporal"}[1m])) by (operation, le, type))
+
+histogram_quantile(0.95, sum(rate(syncmatch_latency_bucket{namespace="105250-borrow-temporal"}[1m])) by (operation, le, type))
+
+histogram_quantile(0.99, sum(rate(service_latency_bucket{namespace="105250-borrow-temporal", service_name=~"$Service", operation!~"PollActivityTaskQueue|PollWorkflowTaskQueue"}[1m])) by (operation, le))
+
+histogram_quantile(0.95, sum(rate(service_latency_bucket{namespace="105250-borrow-temporal", service_name=~"$Service", operation!~"PollActivityTaskQueue|PollWorkflowTaskQueue"}[1m])) by (operation, le))
+
+histogram_quantile(0.95, sum(rate(persistence_latency_bucket{namespace="105250-borrow-temporal", type="$Service"}[1m])) by (operation, le))
+
+histogram_quantile(0.95, sum(rate(temporal_activity_succeed_endtoend_latency_seconds_bucket{namespace=~"105250-borrow", exported_namespace="borrow"}[1m])) by ( activity_type, le))
+
+histogram_quantile(0.99, sum(rate(temporal_activity_succeed_endtoend_latency_seconds_bucket{namespace=~"105250-borrow", exported_namespace="borrow"}[1m])) by ( activity_type, le))
+
+histogram_quantile(0.99, sum(rate(client_latency_bucket{namespace="105250-borrow-temporal", service_name=~"$Service", operation=~"MatchingClientPollActivityTaskQueue|MatchingClientPollWorkflowTaskQueue"}[1m])) by (operation, le, service_role))
+
+histogram_quantile(0.95, sum(rate(client_latency_bucket{namespace="105250-borrow-temporal", service_name=~"$Service", operation=~"MatchingClientPollActivityTaskQueue|MatchingClientPollWorkflowTaskQueue"}[1m])) by (operation, le, service_role))
+
+(180 - (time() - max(kube_job_status_completion_time{namespace='105250-borrow-temporal', job_name=~'borrow-temporal-origination-long-running-wf-mon-job.+'}))) or on() vector (0)
+
+(time() - max(kube_job_status_completion_time{namespace='105250-borrow-temporal', job_name=~'borrow-temporal-rds-rotation-cron.+'}))
+
+
 COPY ./release-artifacts/$TM_VAULT_VERSION/vault-$TM_VAULT_VERSION.release /release-artifacts/vault-${TM_VAULT_VERSION}.release
 
 # Install AWS root certs
