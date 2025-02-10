@@ -1,1 +1,1278 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  annotations:
+    crown.tmachine.io/package-version: namespaced-observability-2024-06-11-cda0304c3a88
+    crownPackageVersion: namespaced-observability-2024-06-11-cda0304c3a88
+    dynamo.certificate.tls/active: "false"
+    policies.kyverno.io/last-applied-patches: |
+      autogen-add-drop-all-capabilities.add-drop-all-capabilities.kyverno.io: added /spec/template/spec/initContainers/0/securityContext/capabilities
+    prometheus-operator-input-hash: "3692271149481230115"
+  creationTimestamp: "2023-05-08T09:46:25Z"
+  generation: 260
+  labels:
+    app: prometheus
+    app.kubernetes.io/created-by: crown-operator
+    app.kubernetes.io/managed-by: crown
+    app.kubernetes.io/part-of: namespaced-observability
+    app.kubernetes.io/version: cda0304c3a885e9bd45e5fbe911bf7c976a738f8
+    crown.tmachine.io/package-date: "2024-06-11"
+    crown.tmachine.io/package-hash: 0cea32256632dbda7c1ff70024aecb1c
+    crownPackageHash: 0cea32256632dbda7c1ff70024aecb1c
+    managed-by: prometheus-operator
+    operator.prometheus.io/mode: server
+    operator.prometheus.io/name: postgres
+    operator.prometheus.io/shard: "0"
+    project: monitoring
+  name: prometheus-postgres
+  namespace: 105250-core-vault
+  ownerReferences:
+  - apiVersion: monitoring.coreos.com/v1
+    blockOwnerDeletion: true
+    controller: true
+    kind: Prometheus
+    name: postgres
+    uid: 1a2fa89f-b0ca-4bb2-8e86-169779ae010a
+  resourceVersion: "1280172803"
+  uid: b438384c-b84f-4851-902f-4192b5eb0f7f
+spec:
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
+  podManagementPolicy: Parallel
+  replicas: 3
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: postgres
+      app.kubernetes.io/managed-by: prometheus-operator
+      app.kubernetes.io/name: prometheus
+      operator.prometheus.io/name: postgres
+      operator.prometheus.io/shard: "0"
+      prometheus: postgres
+  serviceName: prometheus-operated
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/default-container: prometheus
+        kubectl.kubernetes.io/restartedAt: "2024-06-04T15:46:36+02:00"
+        sidecar.istio.io/inject: "false"
+      creationTimestamp: null
+      labels:
+        app: prometheus
+        app.kubernetes.io/instance: postgres
+        app.kubernetes.io/managed-by: prometheus-operator
+        app.kubernetes.io/name: prometheus
+        app.kubernetes.io/version: 2.52.0
+        operator.prometheus.io/name: postgres
+        operator.prometheus.io/shard: "0"
+        project: monitoring
+        prometheus: postgres
+        thanos-peer: "true"
+    spec:
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - preference:
+              matchExpressions:
+              - key: tmachine.io/node
+                operator: In
+                values:
+                - monitoring
+            weight: 80
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: prometheus
+                operator: In
+                values:
+                - postgres
+              - key: app
+                operator: In
+                values:
+                - prometheus
+            topologyKey: failure-domain.beta.kubernetes.io/zone
+      automountServiceAccountToken: true
+      containers:
+      - args:
+        - --web.console.templates=/etc/prometheus/consoles
+        - --web.console.libraries=/etc/prometheus/console_libraries
+        - --config.file=/etc/prometheus/config_out/prometheus.env.yaml
+        - --web.enable-lifecycle
+        - --web.external-url=https://tm-metrics.dynamo.dev.eu-west-1.aws.jpmchase.net/
+        - --web.route-prefix=/
+        - --storage.tsdb.retention.time=3d
+        - --storage.tsdb.retention.size=9GB
+        - --storage.tsdb.path=/prometheus
+        - --storage.tsdb.wal-compression
+        - --web.config.file=/etc/prometheus/web_config/web-config.yaml
+        image: dockerdev.artifactory.dyn.prd.aws.jpmchase.net/container-external/docker.external.thoughtmachine.io/third_party/quay.io/prometheus/prometheus:vault-4.7.11
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 6
+          httpGet:
+            path: /-/healthy
+            port: web
+            scheme: HTTP
+          periodSeconds: 5
+          successThreshold: 1
+          timeoutSeconds: 3
+        name: prometheus
+        ports:
+        - containerPort: 9090
+          name: web
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /-/ready
+            port: web
+            scheme: HTTP
+          periodSeconds: 5
+          successThreshold: 1
+          timeoutSeconds: 3
+        resources:
+          limits:
+            cpu: 1800m
+            memory: 3Gi
+          requests:
+            cpu: 300m
+            memory: 1536Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+        startupProbe:
+          failureThreshold: 60
+          httpGet:
+            path: /-/ready
+            port: web
+            scheme: HTTP
+          periodSeconds: 15
+          successThreshold: 1
+          timeoutSeconds: 3
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /etc/prometheus/config_out
+          name: config-out
+          readOnly: true
+        - mountPath: /etc/prometheus/certs
+          name: tls-assets
+          readOnly: true
+        - mountPath: /prometheus
+          name: prometheus-postgres-db
+          subPath: prometheus-db
+        - mountPath: /etc/prometheus/rules/prometheus-postgres-rulefiles-0
+          name: prometheus-postgres-rulefiles-0
+        - mountPath: /etc/prometheus/web_config/web-config.yaml
+          name: web-config
+          readOnly: true
+          subPath: web-config.yaml
+        - mountPath: /etc/ssl/certs/
+          name: etc-ssl-certs
+      - args:
+        - --listen-address=:8080
+        - --reload-url=http://localhost:9090/-/reload
+        - --config-file=/etc/prometheus/config/prometheus.yaml.gz
+        - --config-envsubst-file=/etc/prometheus/config_out/prometheus.env.yaml
+        - --watched-dir=/etc/prometheus/rules/prometheus-postgres-rulefiles-0
+        command:
+        - /bin/prometheus-config-reloader
+        env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.name
+        - name: SHARD
+          value: "0"
+        image: dockerdev.artifactory.dyn.prd.aws.jpmchase.net/container-external/docker.external.thoughtmachine.io/third_party/quay.io/prometheus-operator/prometheus-config-reloader:vault-4.7.11
+        imagePullPolicy: IfNotPresent
+        name: config-reloader
+        ports:
+        - containerPort: 8080
+          name: reloader-web
+          protocol: TCP
+        resources:
+          limits:
+            cpu: 10m
+            memory: 50Mi
+          requests:
+            cpu: 10m
+            memory: 50Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /etc/prometheus/config
+          name: config
+        - mountPath: /etc/prometheus/config_out
+          name: config-out
+        - mountPath: /etc/prometheus/rules/prometheus-postgres-rulefiles-0
+          name: prometheus-postgres-rulefiles-0
+        - mountPath: /etc/ssl/certs/
+          name: etc-ssl-certs
+      - args:
+        - sidecar
+        - --prometheus.url=http://localhost:9090/
+        - --grpc-address=:10901
+        - --http-address=:10902
+        - '--prometheus.http-client={"tls_config": {"insecure_skip_verify":true}}'
+        image: dockerdev.artifactory.dyn.prd.aws.jpmchase.net/container-external/docker.external.thoughtmachine.io/third_party/quay.io/thanos/thanos:vault-4.7.11
+        imagePullPolicy: IfNotPresent
+        name: thanos-sidecar
+        ports:
+        - containerPort: 10902
+          name: http
+          protocol: TCP
+        - containerPort: 10901
+          name: grpc
+          protocol: TCP
+        resources: {}
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /etc/ssl/certs/
+          name: etc-ssl-certs
+      dnsPolicy: ClusterFirst
+      initContainers:
+      - image: dockerdev.artifactory.dyn.prd.aws.jpmchase.net/container-external/docker.external.thoughtmachine.io/cloud/ca-injector:vault-4.7.11
+        imagePullPolicy: IfNotPresent
+        name: ca-injector
+        resources: {}
+        securityContext:
+          capabilities:
+            drop:
+            - ALL
+          runAsNonRoot: false
+          runAsUser: 0
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /etc/ca-injector/source
+          name: ca-injector-certs
+        - mountPath: /etc/ca-injector/target
+          name: etc-ssl-certs
+      - args:
+        - --watch-interval=0
+        - --listen-address=:8080
+        - --config-file=/etc/prometheus/config/prometheus.yaml.gz
+        - --config-envsubst-file=/etc/prometheus/config_out/prometheus.env.yaml
+        - --watched-dir=/etc/prometheus/rules/prometheus-postgres-rulefiles-0
+        command:
+        - /bin/prometheus-config-reloader
+        env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.name
+        - name: SHARD
+          value: "0"
+        image: dockerdev.artifactory.dyn.prd.aws.jpmchase.net/container-external/docker.external.thoughtmachine.io/third_party/quay.io/prometheus-operator/prometheus-config-reloader:vault-4.7.11
+        imagePullPolicy: IfNotPresent
+        name: init-config-reloader
+        ports:
+        - containerPort: 8080
+          name: reloader-web
+          protocol: TCP
+        resources:
+          limits:
+            cpu: 10m
+            memory: 50Mi
+          requests:
+            cpu: 10m
+            memory: 50Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /etc/prometheus/config
+          name: config
+        - mountPath: /etc/prometheus/config_out
+          name: config-out
+        - mountPath: /etc/prometheus/rules/prometheus-postgres-rulefiles-0
+          name: prometheus-postgres-rulefiles-0
+        - mountPath: /etc/ssl/certs/
+          name: etc-ssl-certs
+      priorityClassName: platform-critical
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext:
+        fsGroup: 65534
+        runAsGroup: 65534
+        runAsUser: 65534
+      serviceAccount: prometheus-postgres
+      serviceAccountName: prometheus-postgres
+      shareProcessNamespace: false
+      terminationGracePeriodSeconds: 600
+      tolerations:
+      - effect: NoSchedule
+        key: services
+        operator: Equal
+        value: monitoring
+      volumes:
+      - name: config
+        secret:
+          defaultMode: 420
+          secretName: prometheus-postgres
+      - name: tls-assets
+        projected:
+          defaultMode: 420
+          sources:
+          - secret:
+              name: prometheus-postgres-tls-assets-0
+      - emptyDir:
+          medium: Memory
+        name: config-out
+      - configMap:
+          defaultMode: 420
+          name: prometheus-postgres-rulefiles-0
+        name: prometheus-postgres-rulefiles-0
+      - name: web-config
+        secret:
+          defaultMode: 420
+          secretName: prometheus-postgres-web-config
+      - configMap:
+          defaultMode: 420
+          name: ca-injector-certs
+        name: ca-injector-certs
+      - emptyDir: {}
+        name: etc-ssl-certs
+  updateStrategy:
+    type: RollingUpdate
+  volumeClaimTemplates:
+  - apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      creationTimestamp: null
+      name: prometheus-postgres-db
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 10Gi
+      storageClassName: prometheus
+      volumeMode: Filesystem
+    status:
+      phase: Pending
+status:
+  availableReplicas: 0
+  collisionCount: 0
+  currentReplicas: 2
+  currentRevision: prometheus-postgres-6fdbfb7d8f
+  observedGeneration: 260
+  replicas: 3
+  updateRevision: prometheus-postgres-656fc85467
+  updatedReplicas: 1
+
+  ---------------------------
+
+  apiVersion: batch/v1
+kind: Job
+metadata:
+  labels:
+    job_purpose: tm-config
+    {{- include "microservice-base.labels" . | nindent 4 }}
+  name: {{ .Values.jobName }}
+  namespace: {{ .Values.namespace }}
+  annotations:
+    dynamo.certificate.tls/active: "false"
+    dynamo.certificate.cdb/client: "false"
+    pca.icb.tls/active: "false"
+spec:
+  backoffLimit: 1
+  template:
+    metadata:
+      labels:
+        job_purpose: tm-config
+    spec:
+      automountServiceAccountToken: true
+      serviceAccountName: {{ .Values.serviceAccount }}
+      securityContext:
+        fsGroup: 999
+        runAsNonRoot: true
+      containers:
+        - name: tm-config-tool
+          env:
+            - name: AWS_STS_REGIONAL_ENDPOINTS
+              value: regional
+            - name: AWS_DEFAULT_REGION
+              value: {{ .Values.aws_region }}
+            - name: AWS_REGION
+              value: {{ .Values.aws_region }}
+            - name: MANIFEST
+              value: {{ .Values.manifest }}
+            - name: DYNAMO_ACCOUNT_NAME
+              value: {{ .Values.environment }}
+            # DEFAULTS
+            {{- if .Values.env }}
+            {{ tpl (toYaml .Values.env) . | nindent 12 }}
+            {{- end }}
+
+            # OVERRIDES
+            {{- if .Values.envExtra }}
+            {{ tpl (toYaml .Values.envExtra) . | nindent 12 }}
+            {{- end }}
+          image: "{{ .Values.image.host}}/dynamo-services/{{ .Values.image.name }}:{{ .Values.image.tag }}"
+          imagePullPolicy: Always
+          resources:
+            limits:
+              cpu: '1'
+              memory: 2Gi
+            requests:
+              cpu: 400m
+              memory: 500Mi
+      restartPolicy: Never
+  ttlSecondsAfterFinished: 180
+
+------------
+
+# Set by pipeline
+environment:
+image:
+  tag:
+  host:
+  name:
+
+appDomain: dynamo
+appOwner: LON17-Rewards
+namespace: 105250-core-vault
+
+component: core-tennessee-configuration-tool
+appSealId: 105250
+deploymentRoute: blue
+serviceCategory: S3
+
+jobName: core-tennessee-configuration-tool
+serviceAccount: core-tennessee-configuration-tool
+aws_region: eu-west-1
+manifest: <+serviceVariables.manifest>
+kafkaConsumer: qa-rewards-tennessee-tests
+mbeConsumer: movemoney-booking-engine
+testProxyConsumer: rewards-test-proxy-service
+corebankingConsumer: corebanking-tm-adapter
+
+-------
+
+
+apiVersion: vault.banzaicloud.com/v1alpha1
+kind: Vault
+metadata:
+  name: hault
+  namespace: {{ .Values.namespace }}
+  labels:
+  {{- with .Values }}
+  {{- include "icb-labels.labels" . | nindent 4 }}
+  {{end}}
+spec:
+  {{- if .Values.haultAnnotations }}
+  annotations:
+  {{ toYaml .Values.haultAnnotations | indent 4 }}
+  {{- end }}
+  vaultConfigurerAnnotations:
+    dynamo.certificate.tls/active: "false"
+  {{ if .Values.localStorage  }}
+  size: 1
+  {{ else }}
+  size: 3
+  {{ end }}
+  bankVaultsImage: "dockerprod.artifactory.dyn.prd.aws.jpmchase.net/container-external/docker.io/banzaicloud/bank-vaults:1.11.2"
+  statsdDisabled: true
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+
+  vaultLabels:
+    haultPod: "true"
+    icb.jpmorgan.com/squad: ICB_Ledgers
+
+  podAntiAffinity: topology.kubernetes.io/zone
+
+  config:
+    api_addr: {{ .Values.apiAddr }}
+    cluster_addr: {{ .Values.clusterAddr }}
+    log_requests_level: trace
+
+    listener:
+      tcp:
+        address: 0.0.0.0:8200
+        tls_cert_file: /vault/tls/server.crt
+        tls_key_file: /vault/tls/server.key
+        telemetry:
+          unauthenticated_metrics_access: true
+    {{- if not .Values.localStorage  }}
+    disable_clustering: false
+    ha_storage:
+      {{- if eq "raft" .Values.ha_storage }}
+      raft:
+        path: /vault/raft/
+      {{- else if eq "cockroachdb" .Values.ha_storage }}
+      cockroachdb:
+        connection_url: "postgresql://hault@cockroach-public:26257/hault?sslmode=verify-full&sslrootcert=/cockroach/cdb/ca.crt&sslcert=/cockroach/cdb/client.hault.crt&sslkey=/cockroach/cdb/client.hault.key&connect_timeout=120&fallback_application_name=${.Env.POD_NAME}"
+        ha_enabled: true
+        ha_table: vault_ha_locks
+      {{- end }}
+    storage:
+      cockroachdb:
+        # possible connection string options https://pkg.go.dev/github.com/lib/pq#hdr-Connection_String_Parameters
+        connection_url: "postgresql://hault@cockroach-public:26257/hault?sslmode=verify-full&sslrootcert=/cockroach/cdb/ca.crt&sslcert=/cockroach/cdb/client.hault.crt&sslkey=/cockroach/cdb/client.hault.key&connect_timeout=120&fallback_application_name=${.Env.POD_NAME}"
+        table: "vault_kv_store"
+    {{- else }}
+    disable_clustering: true
+    storage:
+      file:
+        path: /vault/raft/
+    {{- end }}
+
+    telemetry:
+      disable_hostname: true
+      prometheus_retention_time: 24h
+
+    ui: true
+    disable_mlock: true
+
+  envsConfig: # this might not be needed any more ...This is for Bank Vault
+    - name: AWS_STS_REGIONAL_ENDPOINTS
+      value: regional
+    - name: AWS_REGION
+      value: "{{ .Values.region }}"
+    - name: AWS_DEFAULT_REGION
+      value: "{{ .Values.region }}"
+    {{- if .Values.localStorage  }}
+    - name: VAULT_SKIP_VERIFY
+      value: "true"
+    {{- end }}
+
+
+  #Hault Configs like Secrets,k8s-Auth Methods...
+  externalConfig:
+    policies:
+      - name: vault-account-rotator-bootstraper-policy
+        rules:  |
+          path "secret/dev/*" {
+          capabilities = ["read", "list"]
+          }
+          path "sys/policy/*" {
+          capabilities = [ "read" ]
+          }
+          path "auth/kubernetes/role/*" {
+          capabilities = [ "read" ]
+          }
+          path "auth/token/lookup-self" {
+          capabilities = ["read"]
+          }
+      - name: vault-installer-policy
+        rules: |
+          path "secret/*" {
+          capabilities = ["create", "read", "update", "delete", "list"]
+          }
+          path "sys/policy/*" {
+          capabilities = ["create", "read", "update", "delete"]
+          }
+          path "auth/kubernetes/role/*"{
+          capabilities = ["create", "read", "update", "delete"]
+          }
+          path "auth/token/lookup-self" {
+          capabilities = ["read"]
+          }
+      - name: vault-monitor-policy
+        rules: |
+          path "secret/*" {
+          capabilities = ["read", "list"]
+          }
+          path "sys/policy/*" {
+          capabilities = [ "read" ]
+          }
+          path "auth/kubernetes/role/*"{
+          capabilities = [ "read" ]
+          }
+          path "auth/token/lookup-self" {
+          capabilities = ["read"]
+          }
+    auth:
+      - type: kubernetes
+        config:
+          disable_iss_validation: true
+        roles:
+          # allow sa for token rotator to access the specific secret it needs
+          - name: vault-service-account-rotator-role
+            bound_service_account_names: [ "vault-service-account-token-rotator" ]
+            bound_service_account_namespaces: [ "105250-core-vault-token-rotation" ]
+            policies: [ "vault-account-rotator-bootstraper-policy" ]
+            ttl: 2h
+          # Allow every pod in the default namespace to use the secret kv store
+          - name: vault-installer-role
+            bound_service_account_names: [ "vault-installer-sa" ]
+            bound_service_account_namespaces: [ "105250-core-vault" , "105250-vault-operators" ]
+            policies: [ "vault-installer-policy" ]
+            ttl: 2h
+          - name: vault-operator-role
+            bound_service_account_names: [ "vault-operator-sa", "vault-init-sa", "vault-tools-sa" , "vault-rds-init-sa"]
+            bound_service_account_namespaces: [ "105250-vault-operators" ]
+            policies: [ "vault-installer-policy" ]
+            ttl: 2h
+          # Allow tm_vault_monitoring sa in icb-ledgers namespace
+          - name: vault-monitor-role
+            bound_service_account_names: [ "vault-monitor-sa" ]
+            bound_service_account_namespaces: [ "icb-ledgers-mon" ]
+            policies: [ "vault-monitor-policy" ]
+            ttl: 2h
+    secrets:
+      - options:
+          version: 1
+        path: secret
+        type: kv
+  image: "dockerprod.artifactory.dyn.prd.aws.jpmchase.net/{{ .Values.haultImageRepoLocation }}:{{ .Values.haultImageRepoTag}}"
+  existingTlsSecretName: hault-vault-key
+  resources:
+    bankVaults:
+      limits:
+        cpu: 600m
+        memory: 128Mi
+      requests:
+        cpu: 10m
+        memory: 50Mi
+    vault:
+      limits:
+        cpu: "1"
+        memory: 4Gi
+      requests:
+        cpu: 10m
+        memory: 256Mi
+
+  #Hault Env Config
+  vaultEnvsConfig:
+    - name: "SKIP_CHOWN"
+      value: "true"
+    - name: "SKIP_SETCAP"
+      value: "true"
+    - name: VAULT_LOG_LEVEL
+      value: trace
+    {{ if .Values.localStorage  }}
+    - name: VAULT_SKIP_VERIFY
+      value: "true"
+    {{ end }}
+  volumeClaimTemplates:
+    - metadata:
+        name: vault-raft
+      spec:
+        storageClassName: "gp2-generic-encrypted-wfc"
+        accessModes:
+          - ReadWriteOnce
+        volumeMode: Filesystem
+        resources:
+          requests:
+            storage: 1Gi
+
+  volumeMounts:
+    {{ if not .Values.localStorage  }}
+    - name: vault-raft
+      mountPath: /vault/raft/
+    - name: cockroach
+      mountPath: /cockroach
+    {{ else }}
+    # Use local disk to store Vault file data, see config section.
+    - name: vault-raft
+      mountPath: /vault/raft/
+    {{ end }}
+
+  serviceAccount: core-hault
+  serviceType: ClusterIP
+
+  {{ if not .Values.localStorage }}
+  unsealConfig:
+    aws:
+      kmsKeyId: {{ .Values.unsealConfig.aws.kmsKeyId }}
+      kmsRegion: {{ .Values.unsealConfig.aws.kmsRegion }}
+      s3Bucket: {{ .Values.unsealConfig.aws.s3Bucket }}
+      s3Prefix: ''''
+      s3Region: {{ .Values.unsealConfig.aws.s3Region | default "eu-west-1" }}
+      s3SSE: {{ .Values.unsealConfig.aws.s3SSE }}
+  {{ else }}
+  # Describe where you would like to store the Vault unseal keys and root token.
+  unsealConfig:
+    options:
+      # The preFlightChecks flag enables unseal and root token storage tests
+      # This is true by default
+      preFlightChecks: true
+    kubernetes:
+      secretNamespace: {{ .Values.namespace }}
+  {{ end }}
+  #  #Dev Env:- Unseal keys stored in K8s Secrets
+  #  unsealConfig:
+  #    kubernetes:
+  #      secretNamespace: 105250-core-hault
+  {{ if not .Values.localStorage }}
+  vaultInitContainers:
+    - name: cockroach-cert-copy
+      image: dockerprod.artifactory.dyn.prd.aws.jpmchase.net/container-external/docker.io/banzaicloud/bank-vaults:1.11.2
+      command: [ "/bin/sh" ]
+      args:
+        - "-ecx"
+        - >-
+          mkdir -p /cockroach/cdb;
+          chmod 700 /cockroach/cdb;
+          cp /cdb/client/* /cockroach/cdb/;
+          chown -R 1000:1000 /cockroach/*;
+          chmod 500 /cockroach/cdb/*;
+      volumeMounts:
+        - name: cockroach
+          mountPath: /cockroach
+        - name: cdb-cert
+          mountPath: /cdb
+      resources:
+        limits:
+          memory: "100Mi"
+          cpu: "50m"
+        requests:
+          memory: "50Mi"
+          cpu: "10m"
+  volumes:
+    - name: cockroach
+
+  {{ end }}
+
+
+
+
+
+{{ if not .Values.localStorage  }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: hault
+  namespace: {{ .Values.namespace }}
+  labels:
+  {{- with .Values }}
+  {{- include "icb-labels.labels" . | nindent 4 }}
+  {{end}}
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vault
+      haultPod: "true"
+      vault_cr: hault
+{{ end }}
+
+
+
+
+
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: hault
+  namespace: 105250-core-hault
+  labels:
+  {{- with .Values }}
+  {{- include "icb-labels.labels" . | nindent 4 }}
+  {{end}}
+spec:
+  endpoints:
+  - path: /v1/sys/metrics
+    port: api-port
+    scheme: https
+    tlsConfig:
+      insecureSkipVerify: true
+  selector:
+    matchLabels:
+      global_service: "true"
+
+
+
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  namespace: {{ .Values.namespace }}
+  name: {{ include "vault-operator.fullname" . }}
+  labels:
+    helm.sh/chart: {{ include "vault-operator.chart" . }}
+    {{- with .Values }}
+    {{- include "icb-labels.labels" . | nindent 4 }}
+    {{end}}
+  annotations:
+    dynamo.certificate.tls/active: "false"
+    dynamo.certificate.cdb/client: "false"
+spec:
+  strategy:
+    type: Recreate
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "vault-operator.name" . }}
+  template:
+    metadata:
+      labels:
+        {{- with .Values }}
+        {{- include "icb-labels.resource" . | nindent 8 }}
+        {{end}}
+        app.kubernetes.io/name: {{ include "vault-operator.name" . }}
+        app.kubernetes.io/instance: {{ .Release.Name }}
+{{- if .Values.podAnnotations }}
+      annotations:
+{{ toYaml .Values.podAnnotations | indent 8 }}
+{{- end }}
+    spec:
+      {{- if .Values.priorityClassName }}
+      priorityClassName: {{ .Values.priorityClassName }}
+      {{- end }}
+      initContainers:
+      {{- if index .Values "etcd-operator" "enabled" }}
+      - name: check-etcd-crd
+        image: lachlanevenson/k8s-kubectl
+        command: [ 'kubectl', 'get', 'customresourcedefinitions', 'etcdclusters.etcd.database.coreos.com' ]
+        resources:
+{{ toYaml .Values.resources | indent 10 }}
+      {{- end }}
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.vaultOperator }}:{{ include "vault-operator.vault-operator.version" . }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            - vault-operator
+            - -sync_period
+            - {{ .Values.syncPeriod }}
+          env:
+            - name: WATCH_NAMESPACE
+              value: {{ .Values.watchNamespace }}
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: OPERATOR_NAME
+              value: {{ include "vault-operator.name" . }}
+            - name: OPERATOR_LOG_LEVEL
+              value: debug
+            - name: BANK_VAULTS_IMAGE
+              value: "{{ .Values.image.bankVaultsRepository }}:{{ include "vault-operator.bank-vaults.version" . }}"
+          ports:
+          - containerPort: {{ .Values.service.internalPort }}
+          - containerPort: 8383
+          livenessProbe:
+            httpGet:
+              path: "/"
+              port: {{ .Values.service.internalPort }}
+            initialDelaySeconds: {{ .Values.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.livenessProbe.periodSeconds }}
+            successThreshold: {{ .Values.livenessProbe.successThreshold }}
+            timeoutSeconds: {{ .Values.livenessProbe.timeoutSeconds }}
+          readinessProbe:
+            httpGet:
+              path: "/ready"
+              port: {{ .Values.service.internalPort }}
+            periodSeconds: {{ .Values.readinessProbe.periodSeconds }}
+            successThreshold: {{ .Values.readinessProbe.successThreshold }}
+            timeoutSeconds: {{ .Values.readinessProbe.timeoutSeconds }}
+          resources:
+{{ toYaml .Values.resources | indent 12 }}
+      affinity:
+{{ toYaml .Values.affinity | indent 8 }}
+{{- if .Values.tolerations }}
+      tolerations:
+{{ toYaml .Values.tolerations | indent 8 }}
+{{- end }}
+{{- if .Values.nodeSelector }}
+      nodeSelector:
+{{ toYaml .Values.nodeSelector | indent 8 }}
+{{- end }}
+      serviceAccountName: {{ include "vault-operator.serviceAccountName" . }}
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+{{- include "vault-operator.imagePullSecrets" . | indent 6 }}
+
+
+
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  namespace: {{ .Values.namespace }}
+  name: {{ .Values.service.name }}
+  labels:
+    helm.sh/chart: {{ include "vault-operator.chart" . }}
+    {{- with .Values }}
+    {{- include "icb-labels.labels" . | nindent 4 }}
+    {{end}}
+spec:
+  namespaceSelector:
+    matchNames:
+      - {{ .Values.namespace }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vault
+  podMetricsEndpoints:
+    # for hashicorp vault, removed due to tlsConfig not available in prom 0.35.1 but required.
+    # https://bitbucket.dynamo.prd.aws.jpmchase.net/projects/TERRA/repos/terraform-dynamo-aws-eks-mon/browse/modules/tools/charts/prometheus-instance/values.yaml#2
+    # - path: /v1/sys/metrics?format=prometheus
+    #   interval: 30s
+    #   port: api-port
+    #   scheme: https
+    #   tlsConfig:
+    #     insecureSkipVerify: true
+    # for bank-vaults
+    - path: /metrics
+      interval: 30s
+      port: metrics
+
+
+
+
+
+      {{- if .Values.serviceAccount.create -}}
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ include "vault-operator.fullname" . }}
+  labels:
+    helm.sh/chart: {{ include "vault-operator.chart" . }}
+    {{- with .Values }}
+    {{- include "icb-labels.labels" . | nindent 4 }}
+  {{end}}
+rules:
+- apiGroups:
+  - vault.banzaicloud.com
+  resources:
+  - "*"
+  verbs:
+  - "*"
+- apiGroups:
+  - ""
+  resources:
+  - events
+  - pods
+  - services
+  - configmaps
+  - secrets
+  verbs:
+  - "*"
+- apiGroups:
+  - ""
+  resources:
+  - namespaces
+  - configmaps
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - apps
+  - extensions
+  resources:
+  - replicasets
+  verbs:
+  - get
+- apiGroups:
+  - apps
+  - extensions
+  resources:
+  - deployments
+  - deployments/finalizers
+  - statefulsets
+  verbs:
+  - "*"
+- apiGroups:
+  - etcd.database.coreos.com
+  resources:
+  - "*"
+  verbs:
+  - "*"
+- apiGroups:
+  - apiextensions.k8s.io
+  resources:
+  - customresourcedefinitions
+  verbs:
+  - get
+{{- if .Capabilities.APIVersions.Has "route.openshift.io/v1/Route" }}
+- apiGroups:
+  - route.openshift.io
+  resources:
+  - routes
+  - routes/custom-host
+  verbs:
+  - list
+  - get
+  - create
+  - update
+  - watch
+{{- end }}
+- apiGroups:
+  - extensions
+  resources:
+  - ingresses
+  verbs:
+  - list
+  - get
+  - create
+  - update
+  - watch
+- apiGroups:
+  - monitoring.coreos.com
+  resources:
+  - servicemonitors
+  verbs:
+  - update
+  - list
+  - get
+  - create
+  - watch
+{{- end }}
+{{- if .Values.psp.enabled }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: {{ .Values.namespace }}
+  name: psp:{{ include "vault-operator.fullname" . }}
+rules:
+- apiGroups:
+  - policy
+  resourceNames:
+  - {{ include "vault-operator.fullname" . }}
+  resources:
+  - podsecuritypolicies
+  verbs:
+  - use
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: {{ .Values.namespace }}
+  name: psp:{{ .Values.psp.vaultSA }}
+rules:
+- apiGroups:
+  - policy
+  resourceNames:
+  - {{ .Values.psp.vaultSA }}
+  resources:
+  - podsecuritypolicies
+  verbs:
+  - use
+{{- end }}
+
+
+
+
+
+{{- if .Values.serviceAccount.create -}}
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ include "vault-operator.fullname" . }}
+  labels:
+    helm.sh/chart: {{ include "vault-operator.chart" . }}
+    {{- with .Values }}
+    {{- include "icb-labels.labels" . | nindent 4 }}
+  {{end}}
+subjects:
+- kind: ServiceAccount
+  name: {{ include "vault-operator.serviceAccountName" . }}
+  namespace: {{ .Values.namespace  }}
+roleRef:
+  kind: ClusterRole
+  name: {{ include "vault-operator.fullname" . }}
+  apiGroup: rbac.authorization.k8s.io
+{{- end }}
+{{- if .Values.psp.enabled }}
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  namespace: {{ .Values.namespace }}
+  name: psp:{{ include "vault-operator.fullname" . }}
+  labels:
+    helm.sh/chart: {{ include "vault-operator.chart" . }}
+    {{- with .Values }}
+    {{- include "icb-labels.labels" . | nindent 4 }}
+  {{end}}
+subjects:
+- kind: ServiceAccount
+  name: {{ include "vault-operator.serviceAccountName" . }}
+roleRef:
+  kind: Role
+  name: psp:{{ include "vault-operator.fullname" . }}
+  apiGroup: rbac.authorization.k8s.io
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  namespace: {{ .Values.namespace }}
+  name: psp:{{ .Values.psp.vaultSA }}
+  labels:
+    helm.sh/chart: {{ include "vault-operator.chart" . }}
+    {{- with .Values }}
+    {{- include "icb-labels.labels" . | nindent 4 }}
+  {{end}}
+subjects:
+- kind: ServiceAccount
+  name: {{ .Values.psp.vaultSA }}
+roleRef:
+  kind: Role
+  name: psp:{{ .Values.psp.vaultSA }}
+  apiGroup: rbac.authorization.k8s.io
+{{- end }}
+
+
+
+
+
+
+apiVersion: v1
+kind: Service
+metadata:
+  namespace: {{ .Values.namespace }}
+{{- if .Values.service.name }}
+  name: {{ .Values.service.name }}
+{{- else }}
+  name: {{ include "vault-operator.fullname" . }}
+{{- end }}
+  labels:
+    helm.sh/chart: {{ include "vault-operator.chart" . }}
+    {{- with .Values }}
+    {{- include "icb-labels.labels" . | nindent 4 }}
+  {{end}}
+{{- if .Values.service.annotations }}
+  annotations:
+{{ toYaml .Values.service.annotations | indent 4 }}
+{{- end }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+  - port: {{ .Values.service.externalPort }}
+    targetPort: {{ .Values.service.internalPort }}
+    protocol: TCP
+    name: http
+  - port: 9091
+    protocol: TCP
+    name: http-actuator
+  selector:
+    app.kubernetes.io/name: {{ include "vault-operator.name" . }}
+
+
+
+
+
+# Default values for vault-operator.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+namespace: 105250-core-hault
+
+replicaCount: 1
+
+image:
+  bankVaultsRepository: "dockerprod.artifactory.dyn.prd.aws.jpmchase.net/container-external/docker.io/banzaicloud/bank-vaults"
+  repository: "dockerprod.artifactory.dyn.prd.aws.jpmchase.net/container-external/docker.io/banzaicloud/vault-operator"
+  vaultOperator: "dockerprod.artifactory.dyn.prd.aws.jpmchase.net/container-external/docker.io/banzaicloud/vault-operator"
+  vaultOperatorTag: "1.11.2"
+  pullPolicy: IfNotPresent
+  tag:
+  imagePullSecrets: [ ]  # global.imagePullSecrets is also supported
+
+service:
+  type: ClusterIP
+  externalPort: 80
+  internalPort: 8080
+  name: hault-operator
+  tribe: ICB_Ledgers
+  squad: ICB_Ledgers
+  sealId: "105250"
+  tag: 1.0.0
+
+nameOverride: "hault-operator"
+fullnameOverride: "hault-operator"
+
+crdAnnotations: { }
+
+
+# The namespace where the operator watches for vault CRD objects, if not defined
+# all namespaces are watched
+watchNamespace: "105250-core-hault"
+syncPeriod: "1m"
+
+# # If needed, define nodeSelector for vault operator
+# nodeSelector:
+#   "node-role.kubernetes.io/custom_worker": "true"
+
+# # if tolerations are used inside cluster, define tolerations as well
+# tolerations:
+#   - effect: NoSchedule
+#     key: node_role
+#     operator: Equal
+#     value: custom_worker
+
+labels: { }
+#  team: banzai
+
+resources:
+  limits:
+    cpu: 100m
+    memory: 256Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+affinity: { }
+
+## Assign a PriorityClassName to pods if set
+priorityClassName: ""
+
+terminationGracePeriodSeconds: 10
+
+livenessProbe:
+  initialDelaySeconds: 60
+  periodSeconds: 10
+  successThreshold: 1
+  timeoutSeconds: 1
+readinessProbe:
+  periodSeconds: 10
+  successThreshold: 1
+  timeoutSeconds: 1
+
+etcd-operator:
+  enabled: false
+  etcdOperator:
+    commandArgs:
+      cluster-wide: true
+      create-crd: false
+
+psp:
+  enabled: false
+  vaultSA: "vault"
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # Annotations to add to the service account
+  annotations: { }
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+
+
+
+
 
