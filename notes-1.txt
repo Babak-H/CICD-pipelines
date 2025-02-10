@@ -2583,4 +2583,1952 @@ python_version = "3.10"
 
 
 
+setup.cfg
+[flake8]
+extend-ignore = E501, W503, E203
+[mypy]
+ignore_missing_imports = True
+
+
+
+
+import json
+import logging
+import os
+import re
+import shutil
+from datetime import datetime, timezone
+from logging import getLogger
+
+import botocore
+import botocore.session
+import yaml
+from aws_secretsmanager_caching import SecretCache, SecretCacheConfig
+from botocore.exceptions import ClientError
+
+from src.api.selenium_client import Selenium
+
+LOGGER = getLogger(__name__)
+SECRET_DATA = None
+
+
+def parse_yaml_file(yaml_file_path):
+    with open(yaml_file_path, "r") as yaml_file:
+        yaml_data = yaml.safe_load(yaml_file)
+    return yaml_data
+
+
+def create_or_clean_screenshot_folder(folder):
+    try:
+        os.mkdir(folder)
+    except FileExistsError:
+        folder_cleanup(folder)
+        LOGGER.debug(f"Target folder already exist {folder}")
+
+
+def folder_cleanup(folder):
+    for filename in os.listdir(folder):
+        file_path = os.path.join(folder, filename)
+        try:
+            if os.path.isfile(file_path) or os.path.islink(file_path):
+                os.unlink(file_path)
+            elif os.path.isdir(file_path):
+                shutil.rmtree(file_path)
+        except Exception as e:
+            LOGGER.debug("Failed to delete %s. Reason: %s" % (file_path, e))
+
+
+async def get_other_screenshots(url, health_check):
+    try:
+        with Selenium(base_url=f"{url}") as gs:
+            for hc in health_check.values():
+                gs.get_screenshot(hc, (url + hc).replace("/", "-"))
+    except Exception as e:
+        LOGGER.critical(f"Screenshot Capturing Failed, Error: {e}")
+        raise e
+
+
+def check_if_file_exist(path):
+    if not os.path.exists(path):
+        LOGGER.critical(
+            f"File {path} not exists, please check documentation and creat."
+        )
+        exit()
+
+
+def write_config_file(CONFIG_FILE_PATH, parameter, value):
+    try:
+        with open(CONFIG_FILE_PATH, "r+") as file:
+            config = json.load(file)
+            config[parameter] = value
+            file.seek(0)
+            json.dump(config, file, indent=4)
+            file.truncate()
+            LOGGER.debug(f"Writing {parameter} to {CONFIG_FILE_PATH}")
+    except FileNotFoundError:
+        with open(CONFIG_FILE_PATH, "w") as file:
+            json.dump({parameter: value}, file, indent=4)
+            LOGGER.debug(f"Created {CONFIG_FILE_PATH} and writing {parameter}")
+
+
+# Function to read a parameter's value from the config file
+def read_config_file(CONFIG_FILE_PATH, parameter):
+    try:
+        with open(CONFIG_FILE_PATH, "r") as file:
+            config = json.load(file)
+            LOGGER.debug(f"Parameter {parameter} read from {CONFIG_FILE_PATH}")
+            return config.get(parameter)
+    except FileNotFoundError:
+        LOGGER.info(f"Config file {CONFIG_FILE_PATH} not found")
+        return None
+
+
+def url_environment_replacer(url: str, link: str) -> str:
+    if "environment" in url:
+        try:
+            LOGGER.debug(
+                f"Replaced healthcheck environment in link {url}, by target {link}"
+            )
+            url = re.sub(r"environment", link, url)
+        except KeyError as e:
+            LOGGER.warning(
+                f"Unknown url:link mapping {e}. Please check {url} and mapping in consts.py"
+            )
+    LOGGER.warning(
+        f"Cannot find environment in link, please check configs, fallback to provided link {url}"
+    )
+    return url
+
+
+def transform_time(time_stamp, structure="short"):
+    time_stamp = int(time_stamp) / 1000
+    dt_object = datetime.fromtimestamp(time_stamp, timezone.utc)
+    if structure == "long":
+        return dt_object.strftime("%Y-%m-%d-%H:%M:%S")
+    return dt_object.strftime("%H:%M:%S")
+
+
+def all_experiments_start_end(data):
+    if "start" in data and "end" in data:
+        lowest_start = data["start"]
+        biggest_end = data["end"]
+    else:
+        biggest_end = max(event["end"] for event in data.values())
+        lowest_start = min(event["start"] for event in data.values())
+    return f"S_{transform_time(lowest_start, structure='long')}-E_{transform_time(biggest_end, structure='long')}"
+
+
+def get_secret(secret_name, region_name):
+    logging.getLogger("botocore").setLevel(logging.ERROR)
+    try:
+        # Create a Secrets Manager client
+        client = botocore.session.get_session().create_client(
+            "secretsmanager", region_name=region_name
+        )
+        LOGGER.info(f"Fetching the details for the secret name {secret_name}")
+        cache_config = SecretCacheConfig()
+        cache = SecretCache(config=cache_config, client=client)
+        secret = cache.get_secret_string(secret_name)
+        secret_data = json.loads(secret)
+        return secret_data
+    except ClientError as e:
+        LOGGER.error(f"Exception details: {e}")
+        # For a list of exceptions thrown, see
+        # https://docs.aws.amazon.com/secretsmanager/latest/apireference/API_GetSecretValue.html
+        raise e
+
+
+def kill_selenium_processes(process):
+    proc_dir = "/proc"
+    LOGGER.debug(f"Attempt to kill selenium PID name {process}")
+    for pid_dir in os.listdir(proc_dir):
+        if pid_dir.isdigit():
+            cmdline_path = os.path.join(proc_dir, pid_dir, "cmdline")
+            try:
+                if os.path.isfile(cmdline_path):
+                    with open(cmdline_path) as f:
+                        cmdline = f.read()
+                        if process in cmdline:
+                            os.kill(int(pid_dir), 9)
+                            LOGGER.info(
+                                f"Killed process {pid_dir} with cmdline containing {process}"
+                            )
+            except Exception as e:
+                LOGGER.error(f"Error processing PID {pid_dir}: {e}")
+
+
+
+import logging
+import os
+
+from src import consts
+from src.common import parse_yaml_file
+
+
+class ConfigBuild:
+    def __init__(self):
+        self.logger = logging.getLogger(__name__)
+        self.config_dir = consts.CONFIG_DIR
+        self.config_directory = self.config_directory_check()
+
+    def config_directory_check(self):
+        """Find and validate config directory"""
+        try:
+            if not os.path.isdir(self.config_dir):
+                parent_dir = os.path.abspath(
+                    os.path.join(os.path.dirname(__file__), "..")
+                )
+                config_dir = os.path.join(parent_dir, self.config_dir)
+                os.chdir(config_dir)
+                os.chdir(parent_dir)
+                return config_dir
+            else:
+                return os.path.abspath(self.config_dir)
+        except FileNotFoundError as e:
+            self.logger.error(
+                f"Config directory not found: {self.config_dir}, Error: {e}"
+            )
+            raise e
+
+    def generate_config_files_list(self):
+        """List of Config Files generated from scenarios mapping"""
+        try:
+            config_files_list = [
+                os.path.join(root, directory, file)
+                for root, dirs, files in os.walk(self.config_directory)
+                for directory in dirs
+                if directory == "scenarios"
+                for file in os.listdir(os.path.join(root, str(directory)))
+            ]
+            return config_files_list
+        except Exception as e:
+            self.logger.critical(f"Config files list generation failed, Error: {e}")
+            raise e
+
+    def parse_config_files(self, file_list):
+        """Parse input config files and build the config dictionary dynamically"""
+        config_dict = {}
+        try:
+            for config_file in file_list:
+                config_file_data = parse_yaml_file(config_file)
+                acc = config_file_data["targets"].split("/")[2]
+                runenv = config_file_data["targets"].split("/")[1]
+                dict_key = f"{runenv}_{acc}_{config_file_data['attacks_dictionary'].split('/')[-1].split('.')[0]}"
+                config_dict.setdefault(dict_key, {})
+                config_dict[dict_key]["runenv"] = runenv
+
+                for key, val in config_file_data.items():
+                    if key == "attacks_dictionary" or key == "targets":
+                        config_dict[dict_key][key] = parse_yaml_file(val)
+                    elif key == "health_checks":
+                        self.parse_health_checks(config_dict, dict_key, key, val)
+            return config_dict
+
+        except Exception as e:
+            self.logger.critical(f"Config files parsing failed, Error: {e}")
+            raise e
+
+    def parse_health_checks(self, config_dict, dict_key, key, val) -> dict:
+        """Parse the health checks and returns the list of dashboards and customer journey details"""
+        try:
+            dbd_yaml_list: list = []
+            config_dict[dict_key][key] = val
+            for hc_ip in val:
+                if os.path.isdir(hc_ip):
+                    dbd_yaml_list.extend(
+                        os.path.join(hc_ip, file) for file in os.listdir(hc_ip)
+                    )
+                else:
+                    dbd_yaml_list.append(hc_ip)
+            config_dict[dict_key][key] = [
+                parse_yaml_file(yaml_read) for yaml_read in dbd_yaml_list
+            ]
+            return config_dict
+
+        except Exception as e:
+            self.logger.critical(
+                f"Config health check files parsing failed, Error: {e}"
+            )
+            raise e
+
+
+
+import json
+import logging
+import re
+import time
+import urllib.parse
+from datetime import datetime
+
+import requests
+
+from db.dynamodb import DynamoDbService
+from src import consts
+from src.api.grafana_api import GrafanaApi
+from src.api.selenium_client import Selenium
+from src.common import get_secret, parse_yaml_file, transform_time
+
+LOGGER = logging.getLogger(__name__)
+dynamodb_service = DynamoDbService()
+
+
+def get_panel_name(url, dashboard, panel):
+    if consts.IS_CLOUD:
+        api_tokens = parse_yaml_file(consts.GRAFANA_API_KEYS_PATH)
+        secret_api_key = get_secret(consts.SECRETS_NAME, consts.REGION_NAME)
+        grafana_secrets_name = api_tokens[url]
+        grf_obj = GrafanaApi(
+            api_token=secret_api_key[grafana_secrets_name], base_url=url
+        )
+    else:
+        api_tokens = parse_yaml_file(consts.GRAFANA_API_KEYS_PATH_LOCAL)
+        grf_obj = GrafanaApi(api_token=api_tokens[url], base_url=url)
+    dash_data = grf_obj.get_dashboard(uid=dashboard).json()
+    panel_id = re.findall(r"viewPanel=(\d+)", panel)
+    dashboard_name = dash_data.get("dashboard", {}).get("title", "Unknown_name")
+    if panel_id:
+        for panel in dash_data["dashboard"]["panels"]:
+            if "panels" in panel:
+                for child_panel in panel["panels"]:
+                    if child_panel["id"] == int(panel_id[0]):
+                        return dashboard_name + "-" + child_panel["title"]
+                    elif panel["id"] == panel_id:
+                        return dashboard_name + "-" + panel["title"]
+        return dashboard_name + "panel_id_" + panel_id[0]
+    return dashboard_name
+
+
+def tab_handler(panel, new_dash_dict, dash_uid, hc, gs):
+    try:
+        try:
+            panel_info = f"?{panel.split('?')[1]}"
+        except IndexError:
+            panel_info = ""
+        range_filter = f"&from=now-{consts.TIME_RANGE}h&to=now"
+        new_url = new_dash_dict[dash_uid]
+        joined_url = new_url + panel_info
+        if "orgId" not in joined_url:
+            joined_url = joined_url + "?orgId=1"
+
+        url_result = urllib.parse.urlparse(joined_url)
+        panel_query = url_result.query
+        window_height = hc.get("windows_height", consts.WINDOW_HEIGHT_DEFAULT)
+        if panel_query.__contains__("from"):
+            suffix = f"&{panel_query.split('&')[-2]}&{panel_query.split('&')[-1]}"
+            updated_url = joined_url.removesuffix(suffix)
+            dash_url_with_range = f"{updated_url}{range_filter}"
+            gs.open_new_tab(dash_url_with_range, window_height)
+        else:
+            dash_url_with_range = f"{joined_url}{range_filter}"
+            gs.open_new_tab(dash_url_with_range, window_height)
+    except (KeyError, json.decoder.JSONDecodeError) as e:
+        LOGGER.warning(f"f(Cannot capture panel {panel}), {e}")
+    except Exception as e:
+        LOGGER.critical(f"Unknown error, appeared during capture {e}")
+        raise e
+
+
+async def get_grafana_results(
+    dash_list, grafana_api_url, health_checks, scenario_to_annotate
+):
+    get_metadata = dynamodb_service.get_item(
+        table_name="soteria_metadata",
+        primary_key={"scenario_id": scenario_to_annotate["scenario_id"]},
+    )
+    new_dash_dict = {}
+    screenshot_names = []
+    with Selenium(
+        base_url=f"{grafana_api_url}/d/", screenshot_folder=consts.SCREENSHOT_FOLDER
+    ) as gs:
+        gs.graphana_auth()
+        for dbd_list in dash_list:
+            for key, val in dbd_list.items():
+                new_dash_dict[key] = val["url"]
+        for hc in health_checks:
+            dash_uid_list = hc["dashboards"]
+            for dash_uid, panels in dash_uid_list.items():
+                for panel in panels:
+                    LOGGER.debug(f"Starting Selenium for panel {panel}")
+                    tab_handler(panel, new_dash_dict, dash_uid, hc, gs)
+                    start_ = get_metadata["scenario_metadata"]["start"]
+                    end_ = get_metadata["scenario_metadata"]["end"]
+                    screenshot_names.append(
+                        f"{get_panel_name(url=grafana_api_url, dashboard=dash_uid, panel=panel)}-"
+                        f"S_{transform_time(start_)}-"
+                        f"E_{transform_time(end_)}"
+                    )
+            time.sleep(consts.SCREENSHOT_DELAY)
+            gs.get_screenshots(screenshot_names=screenshot_names)
+        gs.driver_quit()
+
+
+class Grafana:
+    def __init__(self, grafana_api_url, api_token) -> None:
+        self.logger = logging.getLogger(__name__)
+        self.grafana_api_url = grafana_api_url
+        self.ga = GrafanaApi(api_token=api_token, base_url=grafana_api_url)
+        self.did_list: list = []
+        self.annotation_id = 0
+
+    def build_dashboard_json(self, conf, dashboard_dict, scenario_name, folder_id=0):
+        try:
+            seal_id = ""
+            if conf == "product":
+                seal_id = 105250
+            elif conf == "infra":
+                seal_id = ""
+            time = datetime.now()
+            d1 = time.strftime("%Y-%m-%d-%H:%M:%S")
+            title = dashboard_dict["dashboard"]["title"]
+            dash_mod_name = f"{d1}-{title}-{seal_id}-{conf}-Gremlin-{scenario_name}"
+            dashboard_dict["meta"] = None
+            dashboard_dict["dashboard"]["title"] = dash_mod_name
+            dashboard_dict["dashboard"]["id"] = None
+            dashboard_dict["dashboard"]["uid"] = None
+            dash_payload = dashboard_dict["dashboard"]
+            data = {
+                "dashboard": dash_payload,
+                "folderId": folder_id,
+                "overwrite": False,
+            }
+            return json.dumps(data, indent=4)
+        except Exception as e:
+            self.logger.critical(f"Build Dashboard json failed, Error: {e}")
+            raise e
+
+    def get_dash_uid_by_name(self, dashboard_dict, folder_id):
+        list_of_all_dashboard = self.ga.scan_folder(folder_id).json()
+        for dash in list_of_all_dashboard:
+            title = dash["title"]
+            if title == dashboard_dict["dashboard"]["title"]:
+                LOGGER.warning(
+                    f"The dashboard was copied with an error, but the copy exists in Grafana. "
+                    f"Please check collected screenshots for the {title}"
+                )
+                return dash
+        else:
+            LOGGER.critical(
+                f"Cannot copy dashboard {dashboard_dict['dashboard']['title']}. Exiting"
+            )
+            exit()
+
+    def generate_dashboard(self, folder_id, health_checks, conf, scenario_name):
+        for dashboard in health_checks:
+            dash_uid_list = dashboard["dashboards"].keys()
+            for dash_uid in dash_uid_list:
+                try:
+                    res = self.ga.get_dashboard(dash_uid)
+                    dashboard_dict = json.loads(res.text)
+                    dashboard_input_json = self.build_dashboard_json(
+                        conf, dashboard_dict, scenario_name, folder_id
+                    )
+                    res = self.ga.create_dashboard(dashboard_input_json)
+                    if res.status_code != requests.codes.ok:
+                        LOGGER.debug(
+                            f"Grafana return {res.status_code}, fallback to "
+                            "checking if the target dashboard copied with the error"
+                        )
+                        r = self.get_dash_uid_by_name(dashboard_dict, folder_id)
+                    else:
+                        r = json.loads(res.text)
+                    custom = {dash_uid: r}
+                    self.did_list.append(custom)
+                except Exception as e:
+                    self.logger.warning(
+                        f"Creation of the dashboard failed, Error: {e}, skipping {dash_uid}"
+                    )
+        return self.did_list
+
+    def create_annotation(self, run_time, ann_tags):
+        try:
+            get_metadata = dynamodb_service.get_item(
+                table_name="soteria_metadata",
+                primary_key={"scenario_id": run_time["scenario_id"]},
+            )
+            start_time = get_metadata["scenario_metadata"]["start"]
+            end_time = get_metadata["scenario_metadata"]["end"]
+            data = {
+                "time": int(start_time),
+                "timeEnd": int(end_time),
+                "tags": ann_tags,
+                "text": "Annotation for Soteria Chaos Automation",
+            }
+            input_data = json.dumps(data)
+            re_annotation = self.ga.create_annotation(input_data)
+            self.annotation_id = re_annotation.json()["id"]
+        except Exception as e:
+            self.logger.critical(f"Create annotation failed, Error: {e}")
+            raise e
+
+    def delete_annotation(self):
+        try:
+            self.ga.delete_annotation(self.annotation_id)
+        except Exception as e:
+            self.logger.critical(
+                f"Cannot remove annotation {self.annotation_id}, Error: {e}"
+            )
+
+    def get_dashboard_uid(self, dash_list) -> list:
+        try:
+            dash_uid_list = [
+                val["uid"] for dash_uid in dash_list for key, val in dash_uid.items()
+            ]
+            return dash_uid_list
+        except Exception as e:
+            self.logger.critical(f"Dashboard uid retrieval failed, Error: {e}")
+            raise e
+
+    def build_annotation_json(self, conf, gc, res_dict, dash_title):
+        try:
+            if re.search(conf, dash_title):
+                input_conf = gc
+                annotation_list = res_dict["dashboard"]["annotations"]["list"]
+                tags = [hc["tags"] for hc in input_conf]
+                if len(annotation_list) > 1:
+                    for i in annotation_list:
+                        if "builtIn" not in i:
+                            i["tags"] = tags
+                else:
+                    input_dict = {
+                        "datasource": "-- Grafana --",
+                        "enable": True,
+                        "hide": True,
+                        "iconColor": "#FADE2A",
+                        "limit": 100,
+                        "matchAny": True,
+                        "name": "soteria",
+                        "showIn": 0,
+                        "tags": tags,
+                        "type": "tags",
+                    }
+                    annotation_list.append(input_dict)
+        except Exception as e:
+            self.logger.critical(f"Build annotation json failed, Error: {e}")
+            raise e
+
+    def inject_annotation(self, dash_list, folder_id, k, v):
+        try:
+            for dash_uid in self.get_dashboard_uid(dash_list):
+                result = self.ga.get_dashboard(dash_uid)
+                res_dict = json.loads(result.text)
+                dash_title = res_dict["dashboard"]["title"]
+                self.logger.debug("Creating annotation")
+                self.build_annotation_json(k, v, res_dict, dash_title)
+                data = {
+                    "dashboard": res_dict["dashboard"],
+                    "folderId": folder_id,
+                    "overwrite": True,
+                }
+                dashboard_input_json = json.dumps(data, indent=4)
+                self.ga.update_dashboard(dashboard_input_json)
+        except Exception as e:
+            self.logger.critical(f"Inject annotation failed, Error: {e}")
+            raise e
+
+    def cleanup_soteria_dashboards(self):
+        for dashboard in self.did_list:
+            try:
+                dash_uid = next(iter(dashboard.values()))["uid"]
+                self.ga.delete_dashboard(dash_uid)
+            except Exception as e:
+                self.logger.warning(f"Cannot remove dashboard {e}")
+
+
+if __name__ == "__main__":
+    logging.basicConfig(format="%(asctime)s %(message)s", level=logging.DEBUG)
+
+
+
+
+import datetime
+import os
+from logging import getLogger
+
+import boto3
+from botocore.exceptions import NoCredentialsError
+
+from src import consts
+
+LOGGER = getLogger(__name__)
+
+
+def upload_files_to_s3(
+    attack_target,
+    source_folder_path=consts.SCREENSHOT_FOLDER,
+    bucket_name=consts.BUCKET_NAME,
+    target_folder=None,
+):
+    """
+    Uploads the contents of a directory to an S3 bucket, preserving the folder structure.
+
+    :param attack_target:
+    :param source_folder_path:
+    :param bucket_name:
+    :param target_folder:
+    """
+    # Create an S3 client
+    s3 = boto3.client("s3")
+
+    if target_folder is None:
+        target_folder = (
+            attack_target + "-" + datetime.datetime.now().strftime("%Y-%m-%d %H-%M")
+        )
+    # Walk through all the files and subdirectories in the local directory
+    for root, dirs, files in os.walk(source_folder_path):
+        for file_name in files:
+            # Get the full path of the file
+            file_path = os.path.join(root, file_name)
+
+            # Construct the key for S3, by removing the base directory and preserving folder structure
+            relative_path = os.path.relpath(file_path, source_folder_path)
+            s3_key = os.path.join(target_folder, relative_path)
+
+            try:
+                # Upload the file to S3 bucket
+                s3.upload_file(file_path, bucket_name, s3_key)
+                LOGGER.info(f"File '{file_name}' uploaded to '{bucket_name}/{s3_key}'")
+            except NoCredentialsError:
+                LOGGER.critical("AWS credentials not available.")
+                return
+            except Exception as e:
+                LOGGER.critical(f"Error uploading file '{file_name}': {str(e)}")
+        return f"s3://{consts.BUCKET_NAME}/{s3_key.split('/')[0]}"
+
+
+#!/usr/bin/env bash
+for NS in $(kubectl get ns|grep -i '105250-core'|awk '{print $1}')
+do
+    for TYPE in configmap services deployments statefulset horizontalpodautoscalers cronjob virtualservices ingresses
+    do
+        echo "Grabbing $NS $TYPE"
+        mkdir -p $NS/$TYPE
+        for ENTITY in $(kubectl -n $NS get $TYPE| grep -v NAME| awk '{print $1}')
+        do
+            kubectl -n $NS get $TYPE $ENTITY -o yaml > $NS/$TYPE/$ENTITY.yaml
+        done
+    done
+done
+
+
+
+
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: vault-installer-105250-core-vault
+  namespace: 105250-core-vault
+  labels:
+    app: vault-installer
+  annotations:
+    sidecar.istio.io/inject: "false"
+spec:
+  priorityClassName: platform-critical
+  serviceAccountName: vault-installer-sa
+  automountServiceAccountToken: true
+  containers:
+    - name: vault-installer
+      image: dockerdev.artifactory.dyn.prd.aws.jpmchase.net/container-external/docker.external.thoughtmachine.io/vault/installer/vault_installer_container:2.4.0
+      env:
+        - name: CONTAINER_REGISTRY
+          value: dockerdev.artifactory.dyn.prd.aws.jpmchase.net/container-external/docker.external.thoughtmachine.io
+        - name: NAMESPACE
+          value: 105250-core-vault
+        - name: MONITORING_NAMESPACE
+          value: 105250-vault-monitoring
+        - name: CROWN_WHITELIST_FILE
+          value: /release-artifacts/packages.txt
+        - name: CLOUD_PROVIDER
+          value: AWS
+        # This variable should be set to the name of the k8s secret that contains the secret needed
+        # to pull from the remote repository
+        #- name: IMAGE_PULL_SECRETS_NAME
+        #  value: 
+      command:
+        - /bin/bash
+        - -c
+        - tail -f /dev/null
+      volumeMounts:
+        - mountPath: /release-artifacts
+          name: release-artifacts-volume
+        - mountPath: /release-artifacts/hecate-templates
+          name: hecate-template-volume
+        - mountPath: /release-artifacts/config-templates
+          name: config-templates-volume
+      resources:
+        requests:
+          cpu: "0.1"
+          memory: 100Mi
+        limits:
+          cpu: "1.0"
+          memory: 2000Mi
+  initContainers:
+    - name: copy-crown-packages
+      image: dockerdev.artifactory.dyn.prd.aws.jpmchase.net/container-external/docker.external.thoughtmachine.io/vault/installer/crown_packages:2.4.0
+      command:
+        - /bin/sh
+        - -c
+        - cp -r /release-artifacts/* /release-artifacts-output/
+      volumeMounts:
+        - mountPath: /release-artifacts-output
+          name: release-artifacts-volume
+      resources:
+        requests:
+          cpu: "0.1"
+          memory: 100Mi
+        limits:
+          cpu: "0.3"
+          memory: 100Mi
+    - name: copy-hecate-artifacts
+      image: dockerdev.artifactory.dyn.prd.aws.jpmchase.net/container-external/docker.external.thoughtmachine.io/vault/installer/hecate_container:2.4.0
+      command:
+        - /bin/sh
+        - -c
+        - cp -r /release-artifacts/hecate-templates/* /hecate-artifacts-output/
+      volumeMounts:
+        - mountPath: /hecate-artifacts-output
+          name: hecate-template-volume
+      resources:
+        requests:
+          cpu: "0.1"
+          memory: 100Mi
+        limits:
+          cpu: "0.3"
+          memory: 100Mi
+    - name: copy-config-templates
+      image: dockerdev.artifactory.dyn.prd.aws.jpmchase.net/container-external/docker.external.thoughtmachine.io/instances/common/k8s/config_templates:2.4.0
+      command:
+        - /bin/sh
+        - -c
+        - cp -r /release-artifacts/config-templates/* /config-templates-out/
+      volumeMounts:
+        - mountPath: /config-templates-out
+          name: config-templates-volume
+      resources:
+        requests:
+          cpu: "0.1"
+          memory: 100Mi
+        limits:
+          cpu: "0.3"
+          memory: 100Mi
+  volumes:
+    - name: release-artifacts-volume
+      emptyDir: { }
+    - name: hecate-template-volume
+      emptyDir: { }
+    - name: config-templates-volume
+      emptyDir: { }
+
+
+
+
+import json
+import logging
+import os
+import sys
+from pathlib import Path
+
+import hcl2
+
+import rotator.config as config
+
+
+def services_to_skip_for_env(base_tf_path: str, env: str) -> list:
+    with open(f"{base_tf_path}/{env}/terraform.tfvars") as fp:
+        tf_vars = hcl2.load(fp)
+        skipped_modules = tf_vars.get("skipped_modules", [])
+        return skipped_modules
+
+
+def services_to_skip_for_all_envs(base_tf_path: str) -> dict:
+    env_map = {}
+    env_list = list(os.listdir(base_tf_path))
+    for env in env_list:
+        services_to_skip = services_to_skip_for_env(base_tf_path, env)
+        env_map[env.lower()] = services_to_skip
+    return env_map
+
+
+def create_env_map_file(base_tf_path: str, env_map_dir: str) -> dict:
+    env_map = services_to_skip_for_all_envs(base_tf_path)
+    Path(env_map_dir).mkdir(exist_ok=True)
+    env_map_path = f"{env_map_dir}/{config.env_map_file}"
+    logging.info(f"Creating env map file: {env_map_path}")
+    with open(env_map_path, "w") as map_file:
+        json.dump(env_map, map_file)
+        return env_map
+
+
+def filter_out_services_to_skip(services):
+    with open(config.env_map_path) as map_file:
+        env_map = json.load(map_file)
+        services_to_skip = env_map[config.deploy_env]
+        services_to_skip = [service.replace("_", "-") for service in services_to_skip]
+        logging.info(
+            f"environment: {config.deploy_env}, services_to_skip: {services_to_skip}",
+        )
+        services = [
+            service for service in services if service["name"] not in services_to_skip
+        ]
+    return services
+
+
+def main():
+    logging.basicConfig(level=logging.INFO)
+    if len(sys.argv) != 3:
+        print(
+            "Builds a JSON map of de-activated services per environment with filename env_map.json\n"
+            "Usage: python service_filter.py [tf-eu-west-1-policies-base-path] [output-dir]\n"
+            "Example: python src/service_filter.py ./terraform/service-account-policies/eu-west-1/ ./build",
+        )
+        exit(1)
+    create_env_map_file(sys.argv[1], sys.argv[2])
+
+
+if __name__ == "__main__":
+    main()
+
+
+
+import os
+
+
+def get_env(val: str) -> str:
+    return os.getenv(val, val)
+
+
+log_level = os.environ.get("LOGLEVEL", "INFO").upper()
+skip_ssl_verify = os.getenv("SKIP_SSL_VERIFY", "false") == "true"
+
+delete_old_accounts = os.getenv("DELETE_OLD_ACCOUNTS", "") == "true"
+create_new_accounts = os.getenv("CREATE_NEW_ACCOUNTS", "") == "true"
+rotate_accounts_tokens = os.getenv("ROTATE_ACCOUNTS_TOKENS", "") == "true"
+rotate_now = os.getenv("ROTATE_NOW", "") == "true"
+
+rotator_service_name = get_env("ROTATOR_SERVICE_NAME")
+region_name = get_env("AWS_REGION")
+vault_url = get_env("VAULT_URL")
+threshold_days = int(os.getenv("TOKEN_ROTATION_THRESHOLD_DAYS", 1))
+deploy_env = get_env("DEPLOY_ENV")
+deploy_id = get_env("DEPLOY_ID")
+seal_id = get_env("SEAL_ID")
+
+env_map_file = "env_map.json"
+env_map_path = os.getenv("ENV_MAP_PATH", f"/app/{env_map_file}")
+
+services_map_path = os.getenv("SERVICES_PATH", "/config/services.yaml")
+
+
+
+import logging
+from collections.abc import Iterable
+
+import yaml
+
+import rotator.config as config
+from rotator.secret_manager import SecretManager
+from rotator.vault_manager import VaultController
+from service_filter import filter_out_services_to_skip
+
+LOGLEVEL = config.log_level
+logging.basicConfig(level=LOGLEVEL)
+
+SERVICE_SUFFIXES = ["-alpha", "-bravo"]
+
+
+class RequestedService:
+    def __init__(self, name: str, permissions: tuple = ()):
+        self.name = name
+        self.permissions = permissions
+
+    def __eq__(self, other):
+        return self.name == other.name and self.permissions == other.permissions
+
+
+def load_services() -> list[RequestedService]:
+    with open(config.services_map_path) as f:
+        services = yaml.load(f, yaml.SafeLoader)
+
+    services = filter_out_services_to_skip(services)
+    logging.info(
+        f"Configuring {len(services)} active services: {[s['name'] for s in services]}",
+    )
+
+    return [*map(lambda x: RequestedService(*x.values()), services)]
+
+
+def get_sa_names_for_service(service_name: str) -> set[str]:
+    return {service_name + service_suffix for service_suffix in SERVICE_SUFFIXES}
+
+
+def update_tm_from_req(
+    services_req: list[RequestedService],
+    sa_names: set[str],
+) -> tuple[Iterable[RequestedService], Iterable[RequestedService], set[str]]:
+    service_new = list()
+    service_exst = list()
+
+    for service_req in services_req:
+        sa_req_names = get_sa_names_for_service(service_req.name)
+
+        if sa_req_names.issubset(sa_names):
+            service_exst.append(service_req)
+        else:
+            service_new.append(service_req)
+
+        sa_names = sa_names.difference(sa_req_names)
+
+    return service_new, service_exst, sa_names
+
+
+class Runner:
+    def __init__(self):
+        self.secret_manager = SecretManager(
+            config.region_name,
+            config.seal_id,
+            config.deploy_id,
+            config.deploy_env,
+        )
+        self.vault_controller = VaultController()
+
+    def run(self):
+        logging.info("Starting... ")
+        logging.info(f"threshold_days={config.threshold_days} ")
+        logging.info(f"env={config.deploy_env} ")
+        logging.info(
+            f"delete_old_accounts={config.delete_old_accounts} ",
+        )  # from TM (freeze)
+        logging.info(f"create_new_accounts={config.create_new_accounts} ")  # in TM
+        logging.info(f"rotate_account_tokens={config.rotate_accounts_tokens}")  # in SM
+        logging.info(f"rotate_now={config.rotate_now}")  # in TM then SM
+
+        # Initialization
+        rotator_token = self.secret_manager.fetch_secret(
+            config.rotator_service_name,
+        ).fetch_token()
+
+        logging.debug("Rotator token: %s", rotator_token)
+
+        vault = self.vault_controller.init(rotator_token)
+
+        logging.debug(f"Vault accounts: {self.vault_controller}")
+
+        services_req = load_services()
+
+        service_new, service_exst, sa_del = update_tm_from_req(
+            services_req,
+            vault.get_active_service_account_names(),
+        )
+
+        def create_new_service(svc: RequestedService):
+            sa_names = sorted(get_sa_names_for_service(svc.name))
+            ids, tokens = self.vault_controller.create_sa(sa_names, svc.permissions)
+            self.secret_manager.save_secret(svc.name, ids, tokens)
+
+        for service in service_new:
+            logging.info("Adding %s%s", "-" * 8, service.name)
+            if not config.create_new_accounts:
+                logging.info(
+                    "Skipping creation %s since create_new_accounts=%s",
+                    service.name,
+                    config.create_new_accounts,
+                )
+                continue
+
+            create_new_service(service)
+
+        for service in service_exst:
+            logging.info("Updating %s%s", "-" * 8, service.name)
+
+            sa_names_exst = get_sa_names_for_service(service.name)
+
+            self.vault_controller.update_permissions(sa_names_exst, service.permissions)
+
+            sm_secret = self.secret_manager.fetch_secret(service.name)
+
+            # Fixing existing secrets if they are invalid
+            if not sm_secret.valid() or config.rotate_now:
+                create_new_service(service)
+                continue
+
+            if config.rotate_accounts_tokens:
+                if self.secret_manager.should_refresh(sm_secret):
+                    new_token = self.vault_controller.refresh_token(
+                        sm_secret.token_last.sa_id,
+                    )
+                    self.secret_manager.rotate_secret(sm_secret, new_token)
+
+        for sa_name in sa_del:
+            logging.info("Removing %s%s", "-" * 8, sa_name)
+
+            if not config.delete_old_accounts:
+                logging.info(
+                    "Skipping deletion %s since delete_old_accounts=%s",
+                    sa_name,
+                    config.delete_old_accounts,
+                )
+                continue
+
+            self.vault_controller.remove_sa(sa_name)
+
+
+
+import datetime
+import json
+import logging
+from collections import defaultdict
+
+import boto3
+
+from rotator.config import threshold_days
+from rotator.errors import SecretsManagerError
+
+
+class SecretToken:
+    def __init__(self, sa_id=None, token=None):
+        self.sa_id = sa_id
+        self.token = token
+        self.last_updated = 0 if token is None else datetime.datetime.now().timestamp()
+
+
+class Secret:
+    def __init__(self, arn_name: str, secret_tokens: list[SecretToken]):
+        self.arn_name = arn_name
+        self.secret_tokens: list[SecretToken] = secret_tokens
+
+    @property
+    def token_1(self) -> SecretToken:
+        return self.secret_tokens[0]
+
+    @property
+    def token_last(self) -> SecretToken:
+        return self.secret_tokens[1]
+
+    def valid(self) -> bool:
+        return len(self.secret_tokens) == 2
+
+    def fetch_token(self):
+        return self.token_1.token
+
+    @staticmethod
+    def from_json_response(secret_arn: str, json_response: dict[str, str]):
+        raw_secret_tokens: dict[int, SecretToken] = defaultdict(SecretToken)
+
+        if len(json_response) == 1:
+            # This is the intial rotator service account - just single value - converting...
+            raw_secret_tokens[0] = SecretToken(
+                sa_id=-1,
+                token=json_response.popitem()[1],
+            )
+        else:
+            for key, val in json_response.items():
+                import re
+
+                PATTERN = r"token(\d)_?(.*)"
+                m = re.fullmatch(PATTERN, key)
+
+                if m is None:
+                    logging.warning(
+                        "Cannot understand the pattern in the secret %s: %s",
+                        secret_arn,
+                        key,
+                    )
+                    continue
+
+                tkn_id = int(m.group(1))
+                tkn_type = m.group(2)
+
+                if not tkn_type:
+                    raw_secret_tokens[tkn_id].token = val
+                elif tkn_type == "id":
+                    raw_secret_tokens[tkn_id].sa_id = val
+                elif tkn_type == "last_updated":
+                    raw_secret_tokens[tkn_id].last_updated = float(val)
+
+        secret_tokens: list[SecretToken] = [
+            raw_secret_tokens[tkn_id]
+            for tkn_id in sorted(raw_secret_tokens.keys())
+            if None
+            not in (raw_secret_tokens[tkn_id].sa_id, raw_secret_tokens[tkn_id].token)
+        ]
+        return Secret(secret_arn, secret_tokens)
+
+    def serialize(self):
+        if not self.valid():
+            raise SecretsManagerError(f"Secret {self.arn_name} has wrong values.")
+
+        secret_values = {}
+
+        for idx, secret_token in enumerate(self.secret_tokens):
+            secret_values[f"token{idx + 1}"] = secret_token.token
+            secret_values[f"token{idx + 1}_id"] = secret_token.sa_id
+            secret_values[f"token{idx + 1}_last_updated"] = secret_token.last_updated
+
+        return secret_values
+
+
+class SecretManager:
+    def __init__(self, region_name: str, seal_id: str, deploy_id: str, deploy_env: str):
+        self.client = boto3.client(
+            service_name="secretsmanager",
+            region_name=region_name,
+        )
+        self.seal_id = seal_id
+        self.deploy_id = deploy_id
+        self.deploy_env = deploy_env
+
+    def build_secret_name(self, service_name: str) -> str:
+        return f"{self.seal_id}-{self.deploy_id}-{self.deploy_env}-{service_name}-tennessee-token"
+
+    def __load_secret(self, secret_arn: str) -> dict[str, str]:
+        logging.debug("Loading secret: %s", secret_arn)
+        try:
+            response = self.client.get_secret_value(SecretId=secret_arn)
+            value = response["SecretString"]
+        except self.client.exceptions.ResourceNotFoundException:
+            logging.warning("AWS secret %s doesn't have value", secret_arn)
+            value = "{}"
+
+        logging.debug("Secret successfully extracted from %s", secret_arn)
+        return json.loads(value)
+
+    def fetch_secret(self, service_name: str) -> Secret:
+        secret_arn = self.build_secret_name(service_name)
+        json_response = self.__load_secret(secret_arn)
+
+        return Secret.from_json_response(secret_arn, json_response)
+
+    def save_secret(self, service_name, ids, tokens) -> None:
+        arn_name = self.build_secret_name(service_name)
+        secret_tokens = [
+            SecretToken(sa_id=sa_id, token=token) for (sa_id, token) in zip(ids, tokens)
+        ]
+        sm_secret = Secret(arn_name, secret_tokens=secret_tokens)
+        self.__save_secret(sm_secret)
+
+    @staticmethod
+    def should_refresh(sm_secret: Secret) -> bool:
+        last_updated = sm_secret.token_1.last_updated
+        age = datetime.timedelta(
+            seconds=datetime.datetime.now().timestamp() - last_updated,
+        )
+        logging.debug(
+            f"Secret {sm_secret.arn_name} ID {sm_secret.token_1.sa_id} has token age '{age}'",
+        )
+        return age > datetime.timedelta(days=threshold_days) / 2
+
+    def rotate_secret(self, sm_secret: Secret, token: str):
+        prev_last_token = sm_secret.token_last
+        sm_secret.secret_tokens = [
+            SecretToken(prev_last_token.sa_id, token),
+        ] + sm_secret.secret_tokens[:-1]
+        self.__save_secret(sm_secret)
+
+    def __save_secret(self, sm_secret: Secret):
+        secret_values = sm_secret.serialize()
+
+        self.client.put_secret_value(
+            SecretId=sm_secret.arn_name,
+            SecretString=json.dumps(secret_values),
+        )
+        logging.info("Saving secret: %s", sm_secret.arn_name)
+
+
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.service.name }}
+  namespace: {{ .Values.namespace }}
+  annotations:
+{{- if .Values.pcaCertEnabled }}
+    dynamo.certificate.tls/active: "false"
+    dynamo.certificate.cdb/active: "false"
+    pca.icb.tls/active: "true"
+{{ else }}
+    dynamo.certificate.tls/active: "true"
+{{ end }}  
+  labels:
+    {{- with .Values }}
+    {{- include "icb-labels.labels" . | nindent 4 }}
+    {{- end }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ .Values.service.name }}
+  template:
+    metadata:
+      annotations:
+    {{- if .Values.pcaCertEnabled }}
+        dynamo.certificate.tls/active: "false"
+        dynamo.certificate.cdb/active: "false"
+        pca.icb.tls/active: "true"
+    {{ else }}
+        dynamo.certificate.tls/active: "true"
+    {{ end }}        
+        sidecar.istio.io/inject: "false"
+      labels:
+        app: {{ .Values.service.name }}
+        {{- with .Values }}
+        {{- include "icb-labels.labels" . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ .Values.serviceAccountName }}
+      automountServiceAccountToken: true
+      securityContext:
+        fsGroup: 999
+        runAsUser: 999
+        runAsGroup: 999
+      containers:
+        - name: service
+          ports:
+            - name: http-actuator
+              containerPort: 9090
+              protocol: TCP
+            - name: http-webhook
+              containerPort: 8080
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.livenessProbe.path }}
+              port: {{ .Values.livenessProbe.port }}
+              scheme: HTTP
+            initialDelaySeconds: {{ .Values.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.livenessProbe.periodSeconds }}
+            failureThreshold: 3
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.readinessProbe.path }}
+              port: {{ .Values.readinessProbe.port }}
+              scheme: HTTP
+            initialDelaySeconds: {{ .Values.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.readinessProbe.periodSeconds }}
+            failureThreshold: 3
+            timeoutSeconds: 5
+          env:
+            - name: JAVA_TOOL_OPTIONS
+              {{- if .Values.pcaCertEnabled }}
+              value: "-Xms{{ .Values.jvm.minHeapSize }} -Xmx{{ .Values.jvm.maxHeapSize }} -Dserver.ssl.key-store=certs/keystore.p12 -Dserver.ssl.key-store-password=${CERT_KEY_STORE_PASSWORD} -Dapp.rootCaPem=file:///certs/ca.crt"
+              {{ else }}
+              value: "-Xms{{ .Values.jvm.minHeapSize }} -Xmx{{ .Values.jvm.maxHeapSize }}"
+              {{ end }}            
+          resources:
+            requests:
+              memory: {{ .Values.resources.requests.memory }}
+              cpu: {{ .Values.resources.requests.cpu }}
+            limits:
+              memory: {{ .Values.resources.limits.memory }}
+          image: {{ .Values.image.host }}/dynamo-services/{{ .Values.appName }}:{{ .Values.image.tag }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+
+
+
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ .Values.service.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- with .Values }}
+    {{- include "icb-labels.labels" . | nindent 4 }}
+    {{- end }}
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: {{ .Values.service.name }}
+
+
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Values.component }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- with .Values }}
+    {{- include "icb-labels.labels" . | nindent 4 }}
+    {{- end }}
+
+
+
+
+
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: "core-vault-webhooks.dynamo.jpmorgan.com"
+  labels:
+    {{- with .Values }}
+    {{- include "icb-labels.labels" . | nindent 4 }}
+    {{- end}}
+webhooks:
+  - name: "a-tls-cert-annotation.dynamo.jpmorgan.com"
+    rules:
+      - apiGroups: [ "*" ]
+        apiVersions: [ "*" ]
+        operations: [ "CREATE","UPDATE" ]
+        resources: [ "deployments","jobs","statefulsets" ]
+    namespaceSelector:
+      matchLabels:
+        core-vault-webhooks-tls: enabled
+    clientConfig:
+      service:
+        name: core-vault-webhooks
+        namespace: 105250-core-vault-webhooks
+        port: 8080
+        path: /api/v1/tls-cert-annotation
+    # Current version of fabric8 is dictated by Spring Cloud: 4.10.3 only supports v1beta1 
+    admissionReviewVersions: [ "v1" ]
+    timeoutSeconds: 30
+    sideEffects: NoneOnDryRun
+  - name: "resource-limit.dynamo.jpmorgan.com"
+    rules:
+      - apiGroups: [ "*" ]
+        apiVersions: [ "*" ]
+        operations: [ "CREATE","UPDATE" ]
+        resources: [ "pods" ]
+    namespaceSelector:
+      matchLabels:
+        core-vault-webhooks-resource-limit: enabled
+    clientConfig:
+      service:
+        name: core-vault-webhooks
+        namespace: 105250-core-vault-webhooks
+        port: 8080
+        path: /api/v1/resource-limit
+    # Current version of fabric8 is dictated by Spring Cloud: 4.10.3 only supports v1beta1
+    admissionReviewVersions: [ "v1" ]
+    timeoutSeconds: 30
+    sideEffects: NoneOnDryRun
+  - name: "vault-addr.dynamo.jpmorgan.com"
+    rules:
+      - apiGroups: [ "*" ]
+        apiVersions: [ "*" ]
+        operations: [ "CREATE","UPDATE" ]
+        resources: [ "pods" ]
+    namespaceSelector:
+      matchLabels:
+        core-hault-addr: enabled
+    clientConfig:
+      service:
+        name: core-vault-webhooks
+        namespace: 105250-core-vault-webhooks
+        port: 8080
+        path: /api/v1/vault-addr
+    admissionReviewVersions: [ "v1" ]
+    timeoutSeconds: 30
+    sideEffects: NoneOnDryRun
+  - name: "deployment-resiliency.dynamo.jpmorgan.com"
+    rules:
+      - apiGroups: [ "*" ]
+        apiVersions: [ "*" ]
+        operations: [ "CREATE","UPDATE" ]
+        resources: [ "deployments" ]
+    namespaceSelector:
+      matchLabels:
+        core-vault-webhooks-deployment-resiliency: enabled
+    clientConfig:
+      service:
+        name: core-vault-webhooks
+        namespace: 105250-core-vault-webhooks
+        port: 8080
+        path: /api/v1/deployment-resiliency
+    admissionReviewVersions: [ "v1" ]
+    timeoutSeconds: 30
+    sideEffects: NoneOnDryRun
+
+
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.service.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- with .Values }}
+    {{- include "icb-labels.labels" . | nindent 4 }}
+    {{- end }}
+spec:
+  ports:
+    - port: {{ .Values.port }}
+      targetPort: {{ .Values.port }}
+      name: https
+  selector:
+    app: {{ .Values.service.name }}
+
+
+
+apiVersion: v2
+description: A Helm chart for core-vault-webhooks
+name: core-vault-webhooks
+version: 1.0.1
+dependencies:
+  - name: icb-labels
+    version: ~0.2.0
+    repository: https://artifactory.dyn.prd.aws.jpmchase.net/artifactory/helmdev
+
+
+
+pcaCertEnabled: true
+
+appName: icb-ledgers-core-vault-webhooks
+component: core-vault-webhooks
+namespace: 105250-core-vault-webhooks
+serviceAccountName: core-vault-webhooks
+port: 8080
+
+service:
+  name: core-vault-webhooks
+  sealId: "105250"
+  squad: ICB_Ledgers
+  tribe: ICB_SRE
+
+replicaCount: 3
+
+image:
+  pullPolicy: IfNotPresent
+
+livenessProbe:
+  path: /actuator/health
+  port: 9090
+  initialDelaySeconds: 30
+  periodSeconds: 20
+
+readinessProbe:
+  path: /actuator/health
+  port: 9090
+  periodSeconds: 20
+  initialDelaySeconds: 30
+
+resources:
+  requests:
+    memory: "512Mi"
+    cpu: "150m"
+  limits:
+    memory: "1Gi"
+
+jvm:
+  minHeapSize: "250m"
+  maxHeapSize: "700m"
+
+
+
+
+# flake8: noqa
+# noqa: E501
+import os
+
+# PUSHGW_CONFIG
+default_push_gateway_url = (
+    "https://pushgateway.dn-dcore.dynamo.dev.eu-west-1.aws.jpmchase.net:443/"
+)
+PUSHGATEWAY_URL = os.getenv("PUSH_GATEWAY_URL", default_push_gateway_url)
+JOB_NAME = os.getenv("PUSH_GATEWAY_JOB_NAME")
+# PUSH_GATEWAY_JOB_NAME= os.getenv("PUSH_GATEWAY_JOB_NAME")
+CERT_FILE = os.getenv("PUSHGATEWAY_CERT_FILE")
+KEY_FILE = os.getenv("PUSHGATEWAY_KEY_FILE")
+
+# AWS_CONFIG
+AWS_REGION = os.getenv("AWS_REGION")
+S3_BUCKET_HAULT_TOKEN = os.getenv("S3_BUCKET_NAME_HAULT_TOKEN")
+S3_OBJECT_HAULT_TOKEN = os.getenv("S3_OBJECT_NAME_HAULT_TOKEN")
+AWS_ROOT_CA = os.getenv("AWS_ROOT_CA", "/tls")
+# HAULT CONFIG
+HAULT_URL = os.getenv("HAULT_URL")
+HAULT_SECRETS_PATH = os.getenv("HAULT_SECRETS_PATH")
+HAULT_SECRET_CERTS_SUB_PATH = os.getenv("HAULT_SECRET_CERTS_SUB_PATH")
+
+# SECRET_MANAGER_CONFIG
+default_aws_tnn_token_ts_key = "token_last_updated"
+SECRET_MANAGER_FILTER_TNN = os.getenv("AWS_SECRET_TNN_FILTER")
+SECRET_TOKEN1_TO_MONITOR = os.getenv(
+    "AWS_SECRET_TNN_TOKEN1_TS_KEY", default_aws_tnn_token_ts_key
+)
+SECRET_TOKEN2_TO_MONITOR = os.getenv(
+    "AWS_SECRET_TNN_TOKEN2_TS_KEY", default_aws_tnn_token_ts_key
+)
+SECRET_TOKEN_TO_MONITOR_SUFFIX = SECRET_TOKEN1_TO_MONITOR.split("_", 1)[-1]
+
+
+
+
+import json
+import logging
+import os
+
+import boto3
+from psycopg2 import connect, extras
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# DB Identifier
+DB_IDENTIFIER = os.getenv("DB_IDENTIFIER", "xcore")
+
+# Specify the AWS region where your secret is stored
+AWS_REGION = os.getenv("AWS_REGION", "eu-west-1")
+ENV = os.getenv("ENV", "dcore")
+
+
+def get_rds_secret():
+    # Get Credentials from RDS client and Secret Manager
+    db_identifier = f"{DB_IDENTIFIER.replace('xcore', ENV)}"
+    try:
+        # Create a RDS client
+        rds_client = boto3.client("rds", region_name=AWS_REGION)
+        postgres_db = rds_client.describe_db_clusters(
+            DBClusterIdentifier=db_identifier
+        )["DBClusters"][0]
+
+        postgres_db_arn = postgres_db["MasterUserSecret"]["SecretArn"]
+
+        secrets_manager = boto3.client("secretsmanager", region_name=AWS_REGION)
+        # Retrieve the secret value
+        response = secrets_manager.get_secret_value(SecretId=postgres_db_arn)
+
+        # Parse and print the secret JSON
+        secret_value = json.loads(response["SecretString"])
+        secret_value["host"] = postgres_db["ReaderEndpoint"]
+        secret_value["port"] = postgres_db["Port"]
+
+        return secret_value
+
+    except ConnectionError as e:
+        logger.error(f"Error: {e}, When trying to retrieve {postgres_db_arn}")
+    except Exception as e:
+        logger.error(f"Error: {e}")
+
+
+def execute_query(sql_query, db_name="vault"):
+    # Extract URL, username, and password
+    secret_value = get_rds_secret()
+    db_host = secret_value["host"]
+    db_username = secret_value["username"]
+    db_password = secret_value["password"]
+    db_port = secret_value["port"]
+    # Print the extracted values
+    logger.info(f"Url: {db_host}")
+    logger.info(f"Username: {db_username}")
+    logger.info(f"dbname: {db_name}")
+    logger.info(f"port: {db_port}")
+    result = None
+    column_names = ""
+    try:
+        # Establish a database connection
+        connection = connect(
+            host=db_host,
+            port=db_port,
+            dbname=db_name,
+            user=db_username,
+            password=db_password,
+        )
+        # Create a cursor object
+        with connection.cursor(cursor_factory=extras.RealDictCursor) as cursor:
+            # Execute the SQL query
+            cursor.execute(sql_query)
+            # Fetch all rows from the result set
+            data = cursor.fetchall()
+            column_names = [
+                desc[0] for desc in cursor.description if desc[0].lower() != "value"
+            ]
+            result = [dict(row) for row in data] if data else None
+
+        # End if there is no more rows
+    except json.JSONDecodeError as e:
+        logger.error(f"Error parsing JSON: {e}")
+    except KeyError as e:
+        logger.error(f"Error accessing JSON fields: {e}")
+    except Exception as e:
+        logger.error(f"Error: {e}")
+    finally:
+        if connection in locals():
+            # Close the cursor and the connection
+            cursor.close()
+            connection.close()
+        logger.info("Connection to database has been closed successfully")
+    return column_names, result
+
+
+
+
+{{- if not (eq .Values.clusterName "dn-dinfrc-vault") }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/ssl-passthrough: "false"
+  labels:
+    {{- with .Values }}
+    {{- include "icb-labels.labels" . | nindent 4 }}
+    {{end}}
+  name: {{ .Values.service.name }}
+  namespace: {{  .Values.namespace }}
+spec:
+  rules:
+    - host: core-api.{{ .Values.clusterName }}.{{ .Values.CAEnvLevelDNS }}
+      http:
+        paths:
+          - backend:
+              service:
+                name: core-api-gateway
+                port:
+                  name: http
+            pathType: ImplementationSpecific
+    - host: core-api-gateway.{{ .Values.namespace }}.svc.cluster.local
+      http:
+        paths:
+          - backend:
+              service:
+                name: core-api-gateway
+                port:
+                  name: http
+            pathType: ImplementationSpecific
+    - host: workflows-api-gateway.{{ .Values.namespace }}.{{ .Values.CAEnvLevelDNS }}
+      http:
+        paths:
+          - backend:
+              service:
+                name: workflows-api-gateway
+                port:
+                  name: http
+            pathType: ImplementationSpecific
+    - host: workflows-api-gateway.{{ .Values.namespace }}.svc.cluster.local
+      http:
+        paths:
+          - backend:
+              service:
+                name: workflows-api-gateway
+                port:
+                  name: http
+            pathType: ImplementationSpecific
+    - host: workflow-simulator.{{ .Values.namespace }}.{{ .Values.CAEnvLevelDNS }}
+      http:
+        paths:
+          - backend:
+              service:
+                name: workflow-simulator
+                port:
+                  name: http
+            pathType: ImplementationSpecific
+    - host: workflow-simulator.{{ .Values.namespace }}.svc.cluster.local
+      http:
+        paths:
+          - backend:
+              service:
+                name: workflow-simulator
+                port:
+                  name: http
+            pathType: ImplementationSpecific
+    - host: tm-ops.{{ .Values.CAEnvLevelDNS }}
+      http:
+        paths:
+          - backend:
+              service:
+                name: vault-websocket
+                port:
+                  name: websocket
+            path: /websocket
+            pathType: ImplementationSpecific
+          - backend:
+              service:
+                name: vault-admin-website
+                port:
+                  name: http
+            path: /
+            pathType: ImplementationSpecific
+    - host: tm-documentation.{{ .Values.clusterName }}.{{ .Values.CAEnvLevelDNS }}
+      http:
+        paths:
+          - backend:
+              service:
+                name: documentation
+                port:
+                  name: http
+            pathType: ImplementationSpecific
+    - host: access-control-api-gateway.{{ .Values.namespace }}.svc.cluster.local
+      http:
+        paths:
+          - backend:
+              service:
+                name: access-control-api-gateway
+                port:
+                  name: http
+            pathType: ImplementationSpecific
+{{- end }}
+
+
+
+apiVersion: v2
+description: A Helm chart for Vault ingress
+name: vault-ingress
+version: 1.0.0
+dependencies:
+  - name: icb-labels
+    version: ~0.2.0
+    repository: https://artifactory.dyn.prd.aws.jpmchase.net/artifactory/helmdev
+
+
+
+service:
+  name: vault-ingress
+  sealId: "105250"
+  squad: ICB_Ledgers
+  tribe: ICB_SRE
+
+namespace: 105250-core-vault
+
+
+clusterName: dn-ncore-vault
+CAEnvLevelDNS: dynamo.test.eu-west-1.aws.jpmchase.net
+
+
+
+FROM dockerprod.artifactory.dyn.prd.aws.jpmchase.net/container-base/managedbaseimages/lrh9/python:3.10-stable
+
+ARG TM_VAULT_VERSION="4.6.33"
+
+RUN set -eux;
+ENV PG_VERSION=15
+ENV PGHOME=/var/lib/pgsql
+ENV PGDATA=${PGHOME}/${PG_VERSION}/data
+
+RUN microdnf module enable postgresql:${PG_VERSION} -y && microdnf install \
+    tar  \
+    gzip  \
+    libicu  \
+    perl  \
+    libxslt  \
+    jq  \
+    vim \
+    nano \
+    shadow-utils  \
+    awscli \
+    diffutils \
+    postgresql \
+    openssl \
+    bind-utils \
+    traceroute \
+    nc \
+    net-tools \
+    -y \
+    && microdnf clean all
+
+# Install Pipenv and Install used python packages
+
+COPY Pipfile* .
+RUN pip3 install pipenv \
+    && pipenv install --system --deploy \
+    && pip3 uninstall pipenv --yes \
+    && rm -rf Pipfile*
+
+VOLUME /var/run/postgresql
+
+COPY ./release-artifacts/$TM_VAULT_VERSION/vaultctl /release-artifacts/vaultctl
+COPY ./release-artifacts/$TM_VAULT_VERSION/release.json /release-artifacts/release.json
+COPY ./release-artifacts/$TM_VAULT_VERSION/vault-$TM_VAULT_VERSION.release /release-artifacts/vault-${TM_VAULT_VERSION}.release
+
+# Install AWS root certs
+COPY resources/root.crt ${PGHOME}/.postgresql/root.crt
+COPY resources/kubectl /sbin/kubectl
+RUN chmod +x /sbin/kubectl
+COPY resources/wait.sh /
+COPY scripts /scripts
+RUN chmod +x wait.sh
+RUN chmod -R +x /scripts
+# Finish up.
+
+USER 999
+EXPOSE 5432
+
+ENTRYPOINT ["/wait.sh"]
+
+
+
+
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  labels:
+    prom: kubelet
+    role: rules
+  name: custom-contract-engine-alerts
+  namespace: {{.Values.vaultNamespace}}
+spec:
+  groups:
+    - name: contract-engine-resource-usage
+      rules:
+        - alert: ContractEnginePodHighMemUsage
+          # This works under the assumption that CE pods have mem requests 1573741824 bytes
+          expr: |
+            max by (container,pod,label_app,namespace,kubernetes_namespace)
+              (
+                project:app:container_memory_working_set_bytes{container="main",label_app=~"contract-engine|contr act-post-balance-update-processor"}
+              ) > 1073741824
+          for: 15m
+          labels:
+            severity: error
+          annotations:
+            summary: "Detected possible memory leak in contract-engine pod {{ `{{ $labels.pod }}` }}"
+            description: "Memory usage for {{ `{{ $labels.pod }}` }} in the {{ `{{ $labels.kubernetes_namespace }}` }} namespace has exceeded 1 GB for at least 15 minutes"
+            hint: "This is likely a memory leak, and kubernetes is not crash-looping the pod, requiring human-intervention to restart the deployment. Processing of Smart or Supervisor Contract code may be blocked until this action is taken."
+            source: "{{ `{{ $labels.pod }}` }}"
+            component: "vault"
+            group: "{{ `{{ $labels.label_app }}` }}"
+
+
+
+
+{{- if .Values.cronjob.createRepublishCronJob }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  labels: &icb-labels
+  {{- with .Values}}
+    {{- include "icb-labels.labels" . | nindent 4 }}
+  {{- end}}
+  name: {{ .Values.cronjob.name }}
+  namespace: {{ .Values.namespace }}
+spec:
+  schedule: {{ .Values.cronjob.schedule }}
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    metadata:
+      labels:
+        app: {{ .Values.cronjob.name }}
+        project: vault
+    spec:
+      ttlSecondsAfterFinished: 600
+      backoffLimit: 1
+      template:
+        metadata:
+          labels: *icb-labels
+        spec:
+          restartPolicy: Never
+          securityContext:
+            fsGroup: 999
+            runAsUser: 999
+            runAsGroup: 999
+          serviceAccountName: {{ .Values.serviceAccountName }}
+          containers:
+          - image: "{{ .Values.image.host }}/{{ .Values.image.path }}:{{ .Values.image.tag }}"
+            imagePullPolicy: IfNotPresent
+            name: {{ .Values.cronjob.name }}
+            resources:
+                limits:
+                    memory: 128Mi
+                requests:
+                    cpu: 100m
+                    memory: 128Mi
+            command: [ "/bin/bash" ]
+            args:
+              - "-ec"
+              - |
+                ./scripts/vault_republish_post_posting_failures.py --log-level ${LOG_LEVEL} --republish-wait-time-minutes ${REPUBLISH_WAIT_TIME_MINUTES}
+            env:
+              - name: AWS_DEFAULT_REGION
+                value: {{.Values.region}}
+              - name: DYN_ENV
+                value: "{{.Values.environment}}"
+              - name: LOG_LEVEL
+                value: "INFO"
+              - name: REPUBLISH_WAIT_TIME_MINUTES
+                value: "{{.Values.cronjob.republishWaitTimeMinutes}}"
+              - name: CORE_API_ENDPOINT_URL
+                value: "http://core-api-gateway.{{.Values.vaultNamespace}}:8080"
+              - name: REMOVE_POSTING_FOR_FAILED_REPUBLISHING_ENABLED
+                value: "{{.Values.cronjob.removePostingForFailedRepublishingEnabled}}"
+              - name: PROMETHEUS_PUSHGATEWAY_URI
+                value: "push-gateway.icb-ledgers-mon:9091"
+              - name: JOB_RUN_ID
+                valueFrom:
+                  fieldRef:
+                    fieldPath: metadata.labels['job-name']
+
+{{- end }}
+
+
+
+
+pcaCertEnabled: true
+
+service:
+  tribe: ICB_Ledgers
+  squad: ICB_Ledgers
+  sealId: "105250"
+  name: vault-tools
+
+image:
+  path: dynamo-services/icb-ledgers-vault-tools
+
+name: vault-tools
+namespace: 105250-vault-operators
+region: eu-west-1
+
+vaultNamespace: 105250-core-vault
+
+serviceAccountName: vault-tools-sa
+
+dbIdentifierParameter: /tm_vault/db_pointer
+dbIdentifierCM: vault-tools-db-connect
+
+dbname: postgres
+
+patch:
+  deployment:
+    contract_engine_account_scheduling:
+      enabled: false
+      command_batch_size: 20
+    contract_db_data_exporter:
+      enabled: false
+      command_batch_size: 100
+    scheduler_job_poller:
+      enabled: false
+      command_update_interval_secs: 2
+    scheduler_operation_processor:
+        enabled: false
+        command_db_statement_timeout: 10m
+        command_db_total_transaction_timeout: 10m
+        command_db_exclude_pooler: ""
+    otel_collector:
+      enabled: true
+    burrow:
+      enabled: true
+  configMap: ""
+
+# TODO: DYN-608634 to remove during next installation after 4.6.28
+ca_injector:
+  rds_ca_rsa4096_g1:
+    deployed: true
+add_Kyverno_labels:
+    enabled: true
+# TODO: Remove after feature will be implemented THUNDERBAL-205
+istio_cni:
+  repair_by_delete_pods: true
+
+# TODO: Remove potentially: details DYN-626351
+istio_ingress_gateway:
+  internal_only: true
+
+autovacuum:
+  enable: true
+  databases:
+    - name: ledger_balances
+      schema: ledger_balances
+      table: bucket_entries
+
+cronjob:
+  createRepublishCronJob: true
+  name: vault-tools-republish-cron
+  schedule:  "30 3 * * *"
+  removePostingForFailedRepublishingEnabled: true
+  republishWaitTimeMinutes: 1
+
+
+
+
 
