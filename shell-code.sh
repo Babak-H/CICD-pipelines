@@ -1,3 +1,39 @@
+#!/bin/bash
+
+# Directory to read files from
+DIRECTORY="/Users/D645581/platform-terraform-module-ebs-csi-driver"
+
+# Output file
+OUTPUT_FILE="ebs-csi.txt"
+
+# Clear the output file if it already exists
+> "$OUTPUT_FILE"
+
+# Function to read files recursively
+read_files() {
+    local dir="$1"
+    for file in "$dir"/*; do
+        if [ -d "$file" ]; then
+            # If it's a directory, call the function recursively
+            read_files "$file"
+        elif [ -f "$file" ]; then
+            # If it's a file, append its contents to the output file
+            cat "$file" >> "$OUTPUT_FILE"
+            # Add four empty lines
+            echo -e "\n\n\n\n" >> "$OUTPUT_FILE"
+        fi
+    done
+}
+
+# Start reading files from the specified directory
+read_files "$DIRECTORY"
+
+echo "All files have been added to $OUTPUT_FILE with four empty lines between each."
+
+
+
+#====================================================
+
 Cockroach DB backup for Hashicorp Vault
 
 restore the whole database:
