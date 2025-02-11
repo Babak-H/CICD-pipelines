@@ -1,3 +1,872 @@
+### Vault Init ###
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ .Values.service.name }}-crb
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ .Values.service.name }}-cluster-role
+subjects:
+- kind: ServiceAccount
+  name: {{ .Values.vaultDeploymentServiceAccount.name }}
+  namespace: {{ .Values.namespace.operators }}
+
+
+
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  creationTimestamp: null
+  name: {{ .Values.service.name }}-cluster-role
+rules:
+- apiGroups:
+    - ""
+  resources:
+    - secrets
+    - pods
+    - pods/log
+    - events
+  verbs:
+    - get
+    - list
+- apiGroups:
+    - ""
+  resources:
+    - configmaps
+    - pods/exec
+  verbs:
+    - get
+    - list
+    - patch
+    - delete
+    - create
+- apiGroups:
+    - tmachine.io
+  resources:
+    - tmcomponents
+    - tmcomponents/status
+    - crowns
+    - crowns/status
+  verbs:
+    - '*'
+- apiGroups:
+    - apps
+  resources:
+    - deployments
+    - statefulsets
+  verbs:
+    - get
+    - list
+    - update
+    - patch
+    - watch
+- apiGroups:
+    - ""
+  resources:
+    - events
+  verbs:
+    - patch
+    - create
+
+
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.service.name }}-configmap
+  namespace: {{ .Values.namespace.operators }}
+  labels:
+    {{- with .Values }}
+      {{- include "icb-labels.labels" . | nindent 4 }}
+    {{ end }}
+data:
+  values.yaml: |-
+{{ include "values.yaml" . | indent 4 }}
+  kafka-java-truststore-certs-creation.sh: |-
+{{ .Files.Get "kafka-java-truststore-certs-creation.sh" | indent 4 }}
+  db-hostname-replacement-script.py: |-
+{{ .Files.Get "db-hostname-replacement-script.py" | indent 4 }}
+
+
+
+
+# harness.io/skip-file-for-deploy
+{{- $allComponents := concat .Values.installation.phaseOne.components .Values.installation.phaseTwo.components }}
+{{- $allComponentsAsString := join " " $allComponents }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Values.service.jobName }}
+  namespace: {{ .Values.namespace.operators }}
+  annotations:
+  {{- if .Values.pcaCertEnabled }}
+    dynamo.certificate.tls/active: "false"
+    dynamo.certificate.cdb/active: "false"
+    pca.icb.tls/active: "true"
+  {{ else }}
+    dynamo.certificate.tls/active: "true"
+  {{- end }}
+  labels:
+    {{- with .Values }}
+      {{- include "icb-labels.labels" . | nindent 4 }}
+    {{ end }}
+spec:
+  ttlSecondsAfterFinished: 600
+  backoffLimit: 0
+  activeDeadlineSeconds: 10800
+  template:
+    metadata:
+      annotations:
+        sidecar.istio.io/inject: "false"
+    spec:
+      priorityClassName: platform-critical
+      restartPolicy: Never
+      activeDeadlineSeconds: 10800
+      securityContext:
+        fsGroup: 999
+        runAsGroup: 999
+        runAsUser: 999
+      serviceAccountName: {{ .Values.vaultDeploymentServiceAccount.name }}
+      automountServiceAccountToken: true
+      volumes:
+        - name: config
+          configMap:
+            name: "{{ .Values.service.name }}-configmap"
+        - name: tmp-volume
+          emptyDir: { }
+      containers:
+        - name: {{ .Values.service.jobName }}
+          resources:
+            requests:
+              memory: {{ .Values.memory.request }}
+              cpu: {{ .Values.cpu.request }}
+            limits:
+              memory: {{ .Values.memory.limit }}
+          image: {{ .Values.image.host }}/dynamo-services/icb-ledgers-vault-tools:{{ .Values.vaultToolsImageTag }}
+          imagePullPolicy: "IfNotPresent"
+          volumeMounts:
+            - mountPath: /config
+              name: config
+            - mountPath: /tmp
+              name: tmp-volume
+          command: [ "/bin/bash" ]
+          args:
+            - "-ec"
+            - |
+
+              echo "Mounted files for Vault version {{ .Values.vaultVersion }}"
+              echo "Installation mode: {{ .Values.installation.mode }}"; echo ""
+
+              # Mount kubeconfig
+              mkdir ~/.kube;
+              bash /scripts/build-kubeconfig.sh ~/.kube/config;
+              kubectl config get-contexts;
+
+              mkdir -p /tmp/tm-operator;
+              cd /tmp/tm-operator;
+              mv /tmp/values.yaml .;
+
+              # Copying the required scripts nd artifacts
+              cp /release-artifacts/vaultctl .;
+              cp /release-artifacts/vault-{{ .Values.vaultVersion }}.release .;
+              cp /release-artifacts/release.json .;
+
+              cp /scripts/upgrade-logic/kafka-certs-rotation/* /tmp;
+
+              chmod 700 vaultctl;
+              ./vaultctl version; echo ""
+
+              if [[ {{ .Values.installation.mode | quote }} == "rotate-kafka-certs" ]]; then
+
+                #  Extracting a list of principals from the release.json
+                bash /tmp/extract-kafka-principals.sh release.json {{ $allComponentsAsString }}
+
+                # Creating/Updating the kafka client certificates in HashicorpVault
+                bash /tmp/kafka-golang-client-certs-creation.sh kafka_principals_with_pem_certs.txt $SECRET_NAME $OPERATORS_NAMESPACE $HAULT_ADDRESS $HAULT_ROLE;
+                bash /tmp/kafka-java-client-certs-creation.sh kafka_principals_with_pkcs12_certs.txt $SECRET_NAME $OPERATORS_NAMESPACE $HAULT_ADDRESS $HAULT_ROLE;
+                sleep 20;
+
+              fi;
+
+              if [[ {{ .Values.installation.mode | quote }} == "install-initial-components" ]]; then
+
+                if [[ {{ .Values.cluster | quote }} != "dn-dinfrc-vault" ]]; then
+                  # Updating the Hault configmap with the HashicorpVault CA - not applicable for infrc
+                  ca=$(kubectl get secret -n $HASHICORP_VAULT_NAMESPACE hault-vault-key -o jsonpath="{.data['ca\.crt']}" | base64 -d | sed ':a;N;$!ba;s/\n/\\n/g');
+                  kubectl patch configmap hault-config -n $TM_VAULT_NAMESPACE --type merge -p "{\"data\":{\"ca.pem\":\"$ca\"}}";
+                fi;
+
+                # Installing all the components that have to be installed before the main TM Vault component 
+                {{ include "conditionalRetryMinutes" ( dict "condition" .Values.installation.retry "minutes" 30 ) }} ./vaultctl install --context inCluster \
+                  {{- range .Values.installation.phaseOne.components }}
+                  {{ . }} \
+                  {{- end }}
+                  -v values.yaml -r vault-{{ .Values.vaultVersion }}.release \
+                  -o tm-vault:$TM_VAULT_NAMESPACE -o tm-monitoring:$MONITORING_NAMESPACE -o tm-system:$OPERATORS_NAMESPACE -o webhook-operator:$WEBHOOKS_NAMESPACE{{ if eq .Values.installation.phaseOne.continuousReconcile "true" }} \
+                  --continuous-reconcile{{ end }};
+
+                # Restarting the istio pods after istio component deployment but before the TM Vault update (required according to the TM docs)
+                ./vaultctl restart --context inCluster --namespace $ISTIO_NAMESPACE --wait;
+                sleep 10;
+
+                #install all components at the same time, specially when we have kafka, cause status check that is executed inside vaultcl to fail, hence we will do it with retry with timeout
+                {{- if .Values.installation.phaseOne.additionalComponents}}
+                    echo "Preparing the install of additionalComponents \n"
+                    sleep 60;
+                    {{ include "conditionalRetryMinutes" ( dict "condition" .Values.installation.retry "minutes" 30 ) }} ./vaultctl install --context inCluster \
+                    {{- range .Values.installation.phaseOne.additionalComponents }}
+                    {{ . }} \
+                    {{- end }}
+                    -v values.yaml -r vault-{{ .Values.vaultVersion }}.release \
+                    -o tm-vault:$TM_VAULT_NAMESPACE -o tm-monitoring:$MONITORING_NAMESPACE -o tm-system:$OPERATORS_NAMESPACE -o webhook-operator:$WEBHOOKS_NAMESPACE{{ if eq .Values.installation.phaseOne.continuousReconcile "true" }} \
+                    --continuous-reconcile{{ end }};
+                {{- end }}
+
+                #required for self kafka installation in order to setup acls for user
+                if [[ {{ .Values.cluster | quote }} == "dn-dinfrc-vault" ]]; then
+                  echo "Running kafka ACLS setup on INFRC"
+                  kubectl exec -it $(kubectl get pods --no-headers=true -o custom-columns=NAME_OF_MY_POD:.metadata.name --namespace=105250-core-vault | grep kafka-0 ) --namespace=105250-core-vault -- bin/kafka-acls.sh --authorizer-properties zookeeper.connect=zookeeper.105250-core-vault.svc.cluster.local:2181 --add --allow-principal User:{{ .Values.service.jobName }}  --allow-host * --operation ALL --topic *
+                fi;
+              fi;
+
+              if [[ {{ .Values.installation.mode | quote }} == "restart-vault-pods" ]]; then
+
+                # Restarting the TM Vault pods to ensure that each of the pods have the recent sidecar injected (required according to the TM docs) or the newer kafka client certificate downloaded from Hault
+                # When executed after the istio update, should be done after updating istio component and labeling the vault namespace with the new sidecar version, but before the vault-core update (as per THUNDERBAL-114)
+                ./vaultctl restart --context inCluster --namespace $TM_VAULT_NAMESPACE --selector="project notin (kafka)";
+                sleep 20;
+
+              fi;
+
+              if [[ {{ .Values.installation.mode | quote }} == "install-vault" ]]; then
+
+                # Ensure that secrets-rotation-config do not exists to not trigger the secrets-rotation after deploying vault-core but before it will be removed by vault-tools customisations
+                kubectl delete configmap secrets-rotation-config -n $TM_VAULT_NAMESPACE --ignore-not-found=true;
+
+                # Installing the main TM Vault components and all the rest of the optional ones
+                {{ include "conditionalRetryMinutes" ( dict "condition" .Values.installation.retry "minutes" 60 ) }} ./vaultctl install --context inCluster \
+                  {{- range .Values.installation.phaseTwo.components }}
+                  {{ . }} \
+                  {{- end }}
+                  -v values.yaml -r vault-{{ .Values.vaultVersion }}.release \
+                  -o tm-vault:$TM_VAULT_NAMESPACE -o tm-monitoring:$MONITORING_NAMESPACE -o tm-system:$OPERATORS_NAMESPACE -o webhook-operator:$WEBHOOKS_NAMESPACE \
+                  --excluded-kinds {{ .Values.vaultExcludedKinds }}{{ if eq .Values.installation.phaseTwo.continuousReconcile "true" }} \
+                  --continuous-reconcile{{ end }};
+                sleep 60;
+
+                ./vaultctl status --context inCluster --tmcomponent-operator-namespace $OPERATORS_NAMESPACE;
+
+              fi;
+
+              if [[ {{ .Values.installation.mode | quote }} == "manual" ]]; then
+                echo "Entering manual mode"
+                sleep 21600;
+              fi;
+
+          env:
+            - name: CLOUD_PROVIDER
+              value: AWS
+            - name: AWS_STS_REGIONAL_ENDPOINTS
+              value: "regional"
+            - name: AWS_REGION
+              value: {{ .Values.region }}
+            - name: AWS_DEFAULT_REGION
+              value: {{ .Values.region }}
+            - name: OPERATORS_NAMESPACE
+              value: {{ .Values.namespace.operators }}
+            - name: MONITORING_NAMESPACE
+              value: {{ .Values.namespace.monitoring }}
+            - name: TM_VAULT_NAMESPACE
+              value: {{ .Values.namespace.vault }}
+            - name: WEBHOOKS_NAMESPACE
+              value: {{ .Values.namespace.webhooks }}
+            - name: ISTIO_NAMESPACE
+              value: {{ .Values.namespace.istio }}
+            - name: HASHICORP_VAULT_NAMESPACE
+              value: {{ .Values.hashicorpVault.namespace }}
+            - name: SECRET_NAME
+              value: vault-operator-job-cert
+            - name: EXECUTION_ENV
+              value: {{ .Values.stage }}
+            - name: HAULT_ADDRESS
+              value: {{ .Values.hashicorpVault.address }}
+            - name: HAULT_ROLE
+              value: {{ .Values.hashicorpVault.accessRole }}
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  - sh
+                  - -c
+                  - "sleep 10"
+      initContainers:
+        - name: installer-prerequisite-configuration-container
+          resources:
+            requests:
+              memory: 100Mi
+              cpu: "0.1"
+            limits:
+              memory: 100Mi
+          image: "dockerprod.artifactory.dyn.prd.aws.jpmchase.net/container-release/managedbaseimages/oracle-jdk@sha256:b7171198b44b7e319df16a5e4163203dfd6c0096cbcc953dbd36b9568fe71d6d"
+          imagePullPolicy: "IfNotPresent"
+          volumeMounts:
+            - mountPath: /config
+              name: config
+            - mountPath: /tmp
+              name: tmp-volume
+          command: [ "/bin/bash" ]
+          args:
+            - "-ec"
+            - |
+              # The script below have to be launched from the oracle-jdk init container because of lack of the keytool application installed on the vault-tools
+
+              # Generating kafka client truststore for java based microservices
+              cp /config/kafka-java-truststore-certs-creation.sh /tmp/kafka-java-truststore-certs-creation.sh;
+
+              sh /tmp/kafka-java-truststore-certs-creation.sh $SECRET_NAME $OPERATORS_NAMESPACE $HAULT_ADDRESS $HAULT_ROLE;
+
+          env:
+            - name: OPERATORS_NAMESPACE
+              value: {{ .Values.namespace.operators }}
+            - name: SECRET_NAME
+              value: vault-operator-job-cert
+            - name: HAULT_ADDRESS
+              value: {{ .Values.hashicorpVault.address }}
+            - name: HAULT_ROLE
+              value: {{ .Values.hashicorpVault.accessRole }}
+        - name: db-address-replacement-container
+          securityContext:
+            runAsUser: 999
+          resources:
+            requests:
+              memory: 100Mi
+              cpu: "0.1"
+            limits:
+              memory: 100Mi
+          image: "dockerprod.artifactory.dyn.prd.aws.jpmchase.net/container-release/managedbaseimages/python@sha256:d94b6f65a7525e63de1bea0a8f5523d4bbbe8763f666a4eba445392fddeb5a1b"
+          imagePullPolicy: "IfNotPresent"
+          volumeMounts:
+            - mountPath: /config
+              name: config
+            - mountPath: /tmp
+              name: tmp-volume
+          command: [ "/bin/bash" ]
+          args:
+            - "-ec"
+            - |
+
+              pip install pyyaml;
+
+              cp /config/values.yaml /tmp/values.yaml;
+
+              # Getting access to HahicorpVault instance
+              export K8T=`cat /var/run/secrets/kubernetes.io/serviceaccount/token`;
+              export HAULT_TOKEN=`curl -k -s --request POST --data '{"jwt": "'$K8T'", "role": "'$HAULT_ROLE'"}' $HAULT_ADDRESS/v1/auth/kubernetes/login | python -c 'import json,sys;print(json.load(sys.stdin)["auth"]["client_token"])'`;
+              export RDS_ADDRESS=`curl -k -s -X GET -H "X-Vault-Token:$HAULT_TOKEN" $HAULT_ADDRESS/v1/secret/dev/root-db-secrets | python -c 'import json,sys;print(list(json.load(sys.stdin)["data"])[0])'`;
+
+              # Setting the database address in the values.yaml
+              cp /config/db-hostname-replacement-script.py /tmp/db-hostname-replacement-script.py;
+              echo "DB Address: $RDS_ADDRESS";
+              python /tmp/db-hostname-replacement-script.py $RDS_ADDRESS /tmp/values.yaml;
+
+          env:
+            - name: HAULT_ADDRESS
+              value: {{ .Values.hashicorpVault.address }}
+            - name: HAULT_ROLE
+              value: {{ .Values.hashicorpVault.accessRole }}
+
+
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  annotations:
+    eks.amazonaws.com/role-arn: {{ .Values.vaultDeploymentServiceAccount.iamRoleArn }}
+  name: {{ .Values.vaultDeploymentServiceAccount.name }}
+  namespace: {{ .Values.namespace.operators }}
+
+
+
+
+  apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hault-config
+  namespace: {{ .Values.namespace.vault }}
+  labels:
+    {{- with .Values }}
+      {{- include "icb-labels.labels" . | nindent 4 }}
+    {{ end }}
+data:
+  address: {{ .Values.hashicorpVault.address }}
+  SECRET_PREFIX: "dev"
+  STATIC_SECRET_PREFIX: "default/dev"
+  SECRET_VERSION: "1"
+  SECRET_MOUNT_POINT: "secret"
+  AUTH_K8S_BACKEND: kubernetes
+  VAULT_INSTALLER_HAULT_ROLE: {{ .Values.hashicorpVault.accessRole }}
+
+
+
+
+{{- if .Values.vaultMinimalReplicaSetupForDeploymentsWithPDB.enabled }}
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: minimal-deployments-replica-amendments
+  namespace: "{{ .Values.namespace.operators }}"
+spec:
+  rules:
+    {{- $index := 0 }}
+    {{- range $key, $value := .Values.vaultMinimalReplicaSetupForDeploymentsWithPDB.definitions }}
+    {{- $splitedLocation := split "/" $key  }}
+    {{- $namespace := $splitedLocation._0 }}
+    {{- $deployment := $splitedLocation._1 }}
+    {{- $index = $index | add1 }}
+    - name: rule-{{$index}}
+      match:
+        resources:
+          operations:
+            - CREATE
+          name: {{ $deployment }}
+          namespaces:
+            - {{ $namespace }}
+          kinds:
+            - Deployment
+      preconditions:
+        all:
+          - key: "{{ `{{ request.object.spec.replicas }}` }}"
+            operator: LessThan
+            value: {{ $value }}
+      mutate:
+        patchStrategicMerge:
+          spec:
+            replicas: {{ $value }}
+      {{- end }}
+{{- end }}
+
+
+
+
+
+apiVersion: v2
+description: A Helm chart for Vault init
+name: vault-init
+version: 1.0.0
+dependencies:
+  - name: icb-labels
+    version: ~0.2.0
+    repository: https://artifactory.dyn.prd.aws.jpmchase.net/artifactory/helmdev
+
+
+
+
+pcaCertEnabled: true
+
+service:
+  name: vault-init
+  jobName: vault-operator
+  sealId: "105250"
+  squad: ICB_Ledgers
+  tribe: ICB_SRE
+
+cluster: dn-dcore-vault
+region: eu-west-1
+
+vaultVersion: 4.6.33
+vaultExcludedKinds: "Ingress"
+websiteEndpointPrefix: dynamo
+namespace:
+  operators: 105250-vault-operators
+  webhooks: 105250-core-vault-webhooks
+  monitoring: 105250-core-vault-mon
+  vault: 105250-core-vault
+  istio: istio-system
+
+# Installation options:
+#
+# mode:
+# "manual" ------------------------ manual mode, prepares all the files and sleeps for 6h
+# "rotate-kafka-certs" ------------ running only custom scripts rotating the TM dedicated kafka client certs in secrets managers
+# "install-initial-components" ---- installing only the components listed below as phaseOne
+# "restart-vault-pods" ------------ restarting all the vault pods, for example to ensure that the newer sidecar version is in use
+# "install-vault" ----------------- installing only the components listed below as phaseTwo, including the vault-core component executing the actual TM Vault installation
+#
+# phaseX.continuousReconcile:
+# "true" or "false"
+#
+# The continuousReconcile can be temporarily enabled to fix any errors during one-shot installation (as per THUNDERBAL-103) as it will attempt to reconcile the failing components
+# nevertheless the phaseTwo reconciliation should be disabled after resolving all the problems and before running the custom vault tools patches (as it would revert them all)
+#
+installation:
+  mode:
+  retry: false
+  phaseOne:
+    continuousReconcile:
+    components: # should contain at least webhook-operator, istio and observability
+      - webhook-operator
+      - observability
+      - istio
+  phaseTwo:
+    continuousReconcile: # if this is set to true, also the restart steps in phase one may not be working properly, please remember to revert it to false
+    components: # should contain at least vault-core, which have to be separated because of component exclusion
+      - vault-core
+
+vaultDeploymentServiceAccount:
+  name: vault-init-sa
+
+cpu:
+  request: 200m
+memory:
+  request: "200Mi"
+  limit: "1Gi"
+
+istio:
+  proxy:
+    # hashicorp vault, postgresql, kafka
+    excludePorts: "8200, 5432, 29092, 29093, 29094, 29095, 29096, 29097"
+
+hashicorpVault:
+  address: https://hault.105250-core-hault.svc.cluster.local:8200
+  accessRole: vault-operator-role
+  namespace: 105250-core-hault
+  ca_pem: ""
+
+vault:
+  db:
+    adminUser: vault_admin
+    port: 5432
+
+saml_idp:
+  roles_attribute: "Roles"
+  name_attribute: "Name"
+  email_attribute: "Email"
+
+kafka:
+  client:
+    auth_mechanism: mtls
+    disable_ssl: "false"
+    use_system_ca: "false"
+
+# required
+vaultToolsImageTag: 0.0.1
+
+vaultMinimalReplicaSetupForDeploymentsWithPDB:
+  enabled: false
+  definitions:
+    105250-core-vault/access-control-api-gateway: 3
+    105250-core-vault/access-control-api-grpc: 2
+    105250-core-vault/account-event-processor: 2
+    105250-core-vault/account-schedule-job-processor: 2
+    105250-core-vault/account-schedule-outcome-processor: 2
+    105250-core-vault/accounts-resolver: 2
+    105250-core-vault/audit-action-logs-processor: 2
+    105250-core-vault/audit-api-gateway: 3
+    105250-core-vault/audit-api-grpc: 2
+    105250-core-vault/audit-l2a-processor: 2
+    105250-core-vault/audit-logs: 2
+    105250-core-vault/audit-processor: 2
+    105250-core-vault/calendar-api-grpc: 2
+    105250-core-vault/contract-directives-aggregator: 2
+    105250-core-vault/contract-directives-splitter: 2
+    105250-core-vault/contract-engine-account-scheduling: 2
+    105250-core-vault/contract-engine: 4
+    105250-core-vault/contract-executor-offline: 10
+    105250-core-vault/contract-executor: 2
+    105250-core-vault/contract-modules: 2
+    105250-core-vault/contract-parser: 2
+    105250-core-vault/contract-post-balance-update-processor: 2
+    105250-core-vault/contract-post-posting-processor: 2
+    105250-core-vault/contract-schedule-last-run-times: 3
+    105250-core-vault/contract-secondary-directives-committer: 2
+    105250-core-vault/contract-simulation-executor: 2
+    105250-core-vault/contract-simulation: 2
+    105250-core-vault/core-api-gateway: 3
+    105250-core-vault/core-api-grpc: 2
+    105250-core-vault/core-stream-api: 2
+    105250-core-vault/dbpool: 3
+    105250-core-vault/employees: 2
+    105250-core-vault/global-parameters: 2
+    105250-core-vault/integration-topic-manager: 2
+    105250-core-vault/istio-annotation-tm-webhook: 2
+    105250-core-vault/kernel-balance: 4
+    105250-core-vault/otel-collector: 2
+    105250-core-vault/plan-event-processor: 2
+    105250-core-vault/plan-schedule-executor: 2
+    105250-core-vault/policy-management: 2
+    105250-core-vault/policy: 2
+    105250-core-vault/post-posting-republisher: 2
+    105250-core-vault/roles-and-permissions: 2
+    105250-core-vault/schedule-manager: 2
+    105250-core-vault/scheduler-job-dispatcher: 2
+    105250-core-vault/scheduler-outcome-processor: 2
+    105250-core-vault/scheduler: 3
+    105250-core-vault/supervisor-contract-executor: 8
+    105250-core-vault/supervisor-contracts: 2
+    105250-core-vault/ticket-engine: 2
+    105250-core-vault/vault-account-processor: 2
+    105250-core-vault/vault-account: 7
+    105250-core-vault/vault-admin-data-layer: 2
+    105250-core-vault/vault-admin-platform: 2
+    105250-core-vault/vault-admin-website: 2
+    105250-core-vault/vault-apps-ops: 2
+    105250-core-vault/vault-auth: 2
+    105250-core-vault/vault-balance-backdate-processor: 2
+    105250-core-vault/vault-balance-live-processor: 2
+    105250-core-vault/vault-calendar-aware-schedule-processor: 2
+    105250-core-vault/vault-customer: 3
+    105250-core-vault/vault-documents: 2
+    105250-core-vault/vault-employees: 3
+    105250-core-vault/vault-ledger-balances-accumulator-processor: 2
+    105250-core-vault/vault-ledger-balances-bucket-processor: 2
+    105250-core-vault/vault-ledger-balances: 2
+    105250-core-vault/vault-next-job-processor: 2
+    105250-core-vault/vault-payment-order-processor: 2
+    105250-core-vault/vault-payment-order-scheduler: 2
+    105250-core-vault/vault-posting: 4
+    105250-core-vault/vault-postings-account-postings-processor: 2
+    105250-core-vault/vault-postings-async-operations-processor: 2
+    105250-core-vault/vault-postings-enrichment-processor: 2
+    105250-core-vault/vault-postings-processor-internal-async: 2
+    105250-core-vault/vault-postings-processor-internal: 2
+    105250-core-vault/vault-postings-processor-low-priority: 2
+    105250-core-vault/vault-postings-processor: 2
+    105250-core-vault/workflow-callback-router: 2
+    105250-core-vault/workflow-engine: 3
+    105250-core-vault/workflow-processor: 2
+    105250-core-vault/workflow-schedule-processor: 2
+    105250-core-vault/workflow-transform-executor: 2
+    105250-core-vault/workflows-api-gateway: 3
+    105250-core-vault/workflows-api-grpc: 2
+    istio-system/istio-ingressgateway: 2
+    istio-system/istiod-canary-v*: 2
+
+
+#========================================================================================#========================================================================================
+
+### Vault-Kafka-Topics
+
+{{- $_ := required ".Values.environment" .Values.environment }}
+{{- $_ := required ".Values.image.tag" .Values.image.tag }}
+
+
+
+{{- $root := . -}}
+{{- range .Values.vaultKafkaTopics -}}
+apiVersion: dynamo.jpmorgan.com/v1
+kind: KafkaTopic
+metadata:
+  namespace: 105250-core-vault
+  name: {{ .name | replace "_" "-" }}
+  labels:
+  {{- with $.Values }}
+  {{- include "icb-labels.labels" . | nindent 4 }}
+  {{- end }}
+spec:
+  {{ $data := merge . (dict "environment" $root.Values.environment) -}}
+  {{ include "vault.topic-def" $data }}
+---
+{{ end }}
+
+
+
+
+# _helpers.tpl
+{{/* vim: set filetype=mustache: */}}
+
+{{- define "vault.topic-def" -}}
+  name: {{ .name }}
+{{- if hasKey . "replicationfactor" }}
+  replication.factor: {{ .replicationfactor }}
+{{- end }}
+{{- if hasKey . "properties" }}
+  properties:
+    {{- .properties | toYaml | nindent 4 -}}
+{{- end }}
+{{- if hasKey . "partitions" }}
+  partitions: {{ .partitions -}}
+{{- end }}
+  producers:
+    - name: vault-operator
+{{- if hasKey . "producers" }}
+    {{- .producers | toYaml | nindent 4 -}}
+{{- end }}
+{{- if and (hasKey . "testProducers") (ne "pcore" .environment) }}
+    {{- .testProducers | toYaml | nindent 4 -}}
+{{- end }}
+  consumers:
+    - name: vault-operator
+{{- if hasKey . "consumers" }}
+    {{- .consumers | toYaml | nindent 4 -}}
+{{- end }}
+{{- if and (hasKey . "testConsumers") (ne "pcore" .environment) }}
+    {{- .testConsumers | toYaml | nindent 4 -}}
+{{- end }}
+{{- end -}}
+
+
+
+apiVersion: v2
+description: A Helm chart to create Kafka topics and permissions for Vault
+name: vault-kafka-topics
+version: 1.0.0
+dependencies:
+  - name: icb-labels
+    version: ~0.2.0
+    repository: https://artifactory.dyn.prd.aws.jpmchase.net/artifactory/helmdev
+
+
+
+environment:
+image:
+  tag:
+
+service:
+  name: vault-kafka-topics
+  sealId: "105250"
+  squad: ICB_Ledgers
+  tribe: ICB_SRE
+
+vaultKafkaTopics:
+  - name: vault.api.v1.customers.customer.created
+    consumers:
+      - name: corebanking-account-manager
+    testConsumers:
+      - name: borrow-test-proxy-service
+  - name: vault.api.v1.postings.posting_instruction_batch.created
+    consumers:
+      - name: ods
+      - name: ods-ingestion-service
+      - name: ods-ingestion-service-v3
+      - name: ods-reward-transaction-ingestion-service
+        consumerGroup: ods-reward-transaction-ingestion-service
+      - name: dna-kafka-connect-tennessee
+        consumerGroupPrefix: connect-tennessee-
+      - name: corebanking-tm-adapter
+        consumerGroupPrefix: corebanking-tm-adapter
+      - name: stream-iceberg-ingester # Data Engineering
+        consumerGroupPrefix: stream-iceberg-chase-
+    testConsumers:
+      - name: rewards-test-proxy-service
+      - name: ods-e2e-test-service
+      - name: ods-reconciliation-service
+      - name: ods-test-data-collector-service
+      - name: borrow-test-proxy-service
+  - name: vault.api.v1.workflows.workflow_instance.create.requests
+    consumers:
+      - name: borrow-repayment-manager
+      - name: dna-kafka-connect-tennessee
+        consumerGroupPrefix: connect-tennessee-
+      - name: stream-iceberg-ingester # Data Engineering
+        consumerGroupPrefix: stream-iceberg-chase-
+    testConsumers:
+      - name: borrow-test-proxy-service
+  - name: vault.core.postings.post_processing_failures
+    consumers:
+      - name: core-tm-admin-service
+    testConsumers:
+      - name: borrow-test-proxy-service
+  - name: vault.core_api.v1.accounts.account_post_posting_execution_failure.events
+    consumers:
+      - name: core-tm-admin-service
+    testConsumers:
+      - name: borrow-test-proxy-service
+  - name: vault.core.postings.async_creation_api.responses
+    testConsumers:
+      - name: rewards-test-proxy-service
+      - name: borrow-test-proxy-service
+  - name: vault.core.postings.requests.dlq.v1
+    testConsumers:
+      - name: rewards-test-proxy-service
+      - name: borrow-test-proxy-service
+  - name: vault.core.postings.requests.v1
+    producers:
+      - name: rewards-booking-engine
+      - name: movemoney-booking-engine
+      - name: corebanking-tm-adapter
+      - name: borrow-delinquency-manager
+      - name: borrow-dispute-service
+      - name: borrow-credit-card-bank-error-manager
+      - name: borrow-payment-adjustment-service
+    testProducers:
+      - name: qa-rewards-tennessee-tests
+      - name: borrow-test-proxy-service
+    testConsumers:
+      - name: rewards-test-proxy-service
+  - name: vault.core.postings.requests.low_priority.v1
+    producers:
+      - name: corebanking-tm-adapter
+    testConsumers:
+      - name: rewards-test-proxy-service
+      - name: borrow-test-proxy-service
+  - name: vault.core_api.v1.accounts.account.events
+    consumers:
+      - name: corebanking-account-manager
+  - name: vault.core_api.v1.accounts.account_update.events
+    consumers:
+      - name: corebanking-account-manager
+      - name: borrow-line-manager
+      - name: borrow-account-closure-service
+    testConsumers:
+      - name: borrow-test-proxy-service
+  - name: vault.core_api.v1.balances.account_balance.events
+    consumers:
+      - name: corebanking-tm-adapter
+        consumerGroupPrefix: corebanking-tm-adapter
+      - name: dna-kafka-connect-tennessee
+        consumerGroupPrefix: connect-tennessee-
+      - name: borrow-balance-service
+      - name: stream-iceberg-ingester # Data Engineering
+        consumerGroupPrefix: stream-iceberg-chase-
+    testConsumers:
+      - name: borrow-test-proxy-service
+  - name: vault.core_api.v1.scheduler.operation.events.failures
+    consumers:
+      - name: core-tm-admin-service
+    testConsumers:
+      - name: borrow-test-proxy-service
+  - name: scheduler.jobs.outcomes.dlq
+    consumers:
+      - name: core-tm-admin-service
+    testConsumers:
+      - name: borrow-test-proxy-service
+  - name: vault.core.contracts.journeys.account_schedule.requests.dlq
+    consumers:
+      - name: core-tm-admin-service
+    testConsumers:
+      - name: borrow-test-proxy-service
+  - name: vault.core.contracts.journeys.account_schedule.responses.dlq
+    consumers:
+      - name: core-tm-admin-service
+    testConsumers:
+      - name: borrow-test-proxy-service
+  - name: vault.core_api.v1.accounts.account_schedule_job_execution_failure.events
+    consumers:
+      - name: core-tm-admin-service
+    testConsumers:
+      - name: borrow-test-proxy-service
+  - name: vault.core_api.v1.accounts.account_update_batch.events
+    consumers:
+      - name: core-tm-admin-service
+    testConsumers:
+      - name: borrow-test-proxy-service
+  - name: vault.core_api.v1.contracts.contract_notification.events
+    partitions: 10
+    consumers:
+      - name: borrow-repayment-manager
+      - name: borrow-delinquency-manager
+      - name: borrow-fa-gateway
+    testConsumers:
+      - name: borrow-test-proxy-service
+
+#========================================================================================#========================================================================================
+
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
