@@ -2183,4 +2183,864 @@ resource "aws_route53_record" "vault-aurora-blue-green" {
 
 
 
+#### Aurora Module
+
+data "aws_region" "current" {
+}
+
+#Get VPC
+data "aws_cloudformation_export" "vpc_id" {
+  name = "core-Vpc01-Id"
+}
+
+data "aws_subnets" "vpc_private_subnets" {
+  filter {
+    name   = "vpc-id"
+    values = [data.aws_cloudformation_export.vpc_id.value]
+  }
+  filter {
+    name = "tag:Name"
+    values = [
+      "PrivateSubnet*",
+    ]
+  }
+}
+
+data "aws_subnet" "subnets" {
+  for_each = toset(data.aws_subnets.vpc_private_subnets.ids)
+  id       = each.value
+}
+
+
+#icb-ledgers-vault-tools
+resource "aws_iam_role_policy_attachment" "attach_password_policy_to_vault_tools_role" {
+  role       = "${local.name_prefix}-vault-tools-role"
+  policy_arn = aws_iam_policy.tm-db-password-secret-policy.arn
+}
+resource "aws_iam_role_policy_attachment" "attach_logs_policy_to_vault_tools_role" {
+  role       = "${local.name_prefix}-vault-tools-role"
+  policy_arn = aws_iam_policy.tm_db_export_logs.arn
+}
+
+
+###############################
+# Cloudwatch log group
+###############################
+
+resource "aws_cloudwatch_log_group" "cloudwatch_logs_exports" {
+  name              = "/aws/rds/cluster/${var.parent_db_name}-cluster/postgresql"
+  retention_in_days = var.log_retention_in_days
+  kms_key_id        = aws_kms_key.log_group_secret.arn
+
+  tags = var.tags
+}
+
+data "aws_iam_policy_document" "aurora_logs_kms_policy" {
+  statement {
+    sid       = "Allow IAM User Permissions"
+    effect    = "Allow"
+    actions   = ["kms:*"]
+    resources = ["*"]
+    principals {
+      identifiers = ["arn:aws:iam::${var.account_id}:root"]
+      type        = "AWS"
+    }
+  }
+  statement {
+    sid    = "Allow Amazon Cloudwatch Log to use this key"
+    effect = "Allow"
+    actions = [
+      "kms:Encrypt*",
+      "kms:Decrypt*",
+      "kms:ReEncrypt*",
+      "kms:GenerateDataKey*",
+      "kms:Describe*"
+    ]
+    resources = ["*"]
+    principals {
+      identifiers = ["logs.${data.aws_region.current.name}.amazonaws.com"]
+      type        = "Service"
+    }
+    condition {
+      test     = "ArnLike"
+      variable = "kms:EncryptionContext:aws:logs:arn"
+      values   = ["arn:aws:logs:${data.aws_region.current.name}:${var.account_id}:*"]
+    }
+  }
+}
+
+resource "aws_kms_key" "log_group_secret" {
+  description         = "Key for secret ${var.parent_db_name} log group"
+  enable_key_rotation = true
+  tags                = var.tags
+  policy              = data.aws_iam_policy_document.aurora_logs_kms_policy.json
+}
+
+
+##############################################################
+# Policy to export the metrics
+##############################################################
+resource "aws_iam_policy" "tm_db_export_logs" {
+  name   = "${var.parent_db_name}-TMAuroraExportLogs"
+  path   = local.policy_path
+  policy = data.aws_iam_policy_document.aurora_logs_export_policy.json
+}
+
+data "aws_iam_policy_document" "aurora_logs_export_policy" {
+  statement {
+    effect = "Allow"
+    actions = [
+      "logs:CreateExportTask",
+      "logs:CancelExportTask",
+      "logs:DescribeExportTasks",
+      "logs:DescribeLogStreams",
+      "logs:DescribeLogGroups",
+      "logs:GetLogEvents"
+    ]
+    resources = [
+      "${aws_cloudwatch_log_group.cloudwatch_logs_exports.arn}:*"
+    ]
+  }
+}
+
+
+##############################################################
+# Enhanced monitoring
+##############################################################
+resource "aws_iam_role" "aurora_enhanced_monitoring" {
+  name                 = "${var.parent_db_name}-enhanced-monitoring"
+  assume_role_policy   = data.aws_iam_policy_document.aurora_enhanced_monitoring.json
+  path                 = "/"
+  permissions_boundary = "arn:aws:iam::${var.account_id}:policy/pave/infradeployer/${var.seal_id}-EMEA-${var.environment}-INFRADEPLOYER/permissions_boundary/${var.seal_id}-EMEA-${var.environment}-INFRADEPLOYER-permissionBoundary"
+  tags                 = var.tags
+}
+
+data "aws_iam_policy_document" "aurora_enhanced_monitoring" {
+  statement {
+    actions = [
+      "sts:AssumeRole",
+    ]
+
+    effect = "Allow"
+
+    principals {
+      identifiers = ["monitoring.rds.amazonaws.com"]
+      type        = "Service"
+    }
+  }
+}
+
+resource "aws_iam_role_policy_attachment" "aurora_enhanced_monitoring" {
+  role       = aws_iam_role.aurora_enhanced_monitoring.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonRDSEnhancedMonitoringRole"
+}
+
+
+
+
+locals {
+  name_prefix = "${var.seal_id}-${var.deployment_id}-${lower(var.environment)}"
+  policy_path = "/icbLedgers/"
+
+  #Naming Convention
+  backward_name = "${var.seal_id}-${var.backward_deployment_id}-${lower(var.environment)}-${var.db_name}"
+
+  #Network
+  subnet_ids_string = join(",", data.aws_subnets.vpc_private_subnets.ids)
+  subnet_ids_list   = sort(split(",", local.subnet_ids_string))
+
+
+  # Database settings and overrides
+  cluster_identifier = "${var.parent_db_name}-cluster"
+  db_port            = var.db_port
+
+  # Database instance promotion tier
+  promotion_tier_writer = 0
+  promotion_tier_reader = 15
+
+  # Detailed logging parameters
+  detailed_logging_parameters = {
+    log_error_verbosity      = "verbose"
+    log_connections          = 1
+    log_disconnections       = 1
+    log_duration             = 1
+    log_lock_waits           = 1
+    log_replication_commands = 1
+    log_rotation_size        = 1000000
+    log_statement            = "all"
+    # Highest supported severity by postgres DEBUG5
+    log_min_messages        = "DEBUG1"
+    log_min_error_statement = "DEBUG1"
+  }
+
+  # Notice logging parameters
+  notice_logging_parameters = {
+    log_min_messages        = "NOTICE"
+    log_min_error_statement = "NOTICE"
+  }
+
+}
+
+########################################################
+# Database Pre-Requisites
+########################################################
+resource "aws_db_subnet_group" "default" {
+  name       = "db-${local.backward_name}-cluster"
+  subnet_ids = local.subnet_ids_list
+}
+
+resource "aws_rds_cluster_parameter_group" "tm_compliant" {
+  name   = var.parent_db_name == "tm-vault-green" ? "${var.parent_db_name}-2" : "${var.parent_db_name}-1"
+  family = var.db_parameter_cluster_group_family
+
+  parameter {
+    name  = "rds.force_ssl"
+    value = "1"
+  }
+
+  parameter {
+    name         = "max_logical_replication_workers"
+    value        = var.max_logical_replication_workers
+    apply_method = "pending-reboot"
+  }
+  parameter {
+    name         = "max_worker_processes"
+    value        = var.max_worker_processes
+    apply_method = "pending-reboot"
+  }
+
+  parameter {
+    name         = "max_locks_per_transaction"
+    value        = var.max_locks_per_transaction
+    apply_method = "pending-reboot"
+  }
+  parameter {
+    name         = "max_pred_locks_per_transaction"
+    value        = var.max_pred_locks_per_transaction
+    apply_method = "pending-reboot"
+  }
+  parameter {
+    name         = "max_pred_locks_per_page"
+    value        = var.max_pred_locks_per_page
+    apply_method = "pending-reboot"
+  }
+  parameter {
+    name         = "password_encryption"
+    value        = var.password_encryption
+    apply_method = "pending-reboot"
+  }
+  parameter {
+    name         = "max_connections"
+    value        = var.max_connections
+    apply_method = "pending-reboot"
+  }
+  parameter {
+    name         = "rds.logical_replication"
+    value        = var.logical_replication
+    apply_method = "pending-reboot"
+  }
+  parameter {
+    name         = "max_wal_senders"
+    value        = var.max_wal_senders
+    apply_method = "pending-reboot"
+  }
+  parameter {
+    name         = "max_replication_slots"
+    value        = var.max_replication_slots
+    apply_method = "pending-reboot"
+  }
+  parameter {
+    name         = "timezone"
+    value        = var.timezone
+    apply_method = "pending-reboot"
+  }
+  parameter {
+    name         = "wal_buffers"
+    value        = var.wal_buffers
+    apply_method = "pending-reboot"
+  }
+  parameter {
+    name         = "shared_preload_libraries"
+    value        = "pgaudit,pg_stat_statements"
+    apply_method = "pending-reboot"
+  }
+  parameter {
+    name         = "shared_preload_libraries"
+    value        = "pgaudit,pg_stat_statements"
+    apply_method = "pending-reboot"
+  }
+  parameter {
+    name         = "wal_sender_timeout"
+    value        = var.wal_sender_timeout
+    apply_method = "immediate"
+  }
+  parameter {
+    name         = "wal_receiver_timeout"
+    value        = var.wal_receiver_timeout
+    apply_method = "immediate"
+  }
+  dynamic "parameter" {
+    for_each = var.detailed_logging ? local.detailed_logging_parameters : (var.notice_logging ? local.notice_logging_parameters : {})
+    content {
+      name  = parameter.key
+      value = parameter.value
+    }
+  }
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+resource "aws_rds_cluster" "aurora_cluster" {
+  depends_on         = [aws_cloudwatch_log_group.cloudwatch_logs_exports]
+  cluster_identifier = local.cluster_identifier
+  engine             = var.engine
+  engine_version     = var.engine_version
+  availability_zones = ["eu-west-1c", "eu-west-1b", "eu-west-1a"]
+
+  # Parameters group
+  db_cluster_parameter_group_name = aws_rds_cluster_parameter_group.tm_compliant.name
+  # Network / Security
+  vpc_security_group_ids = [aws_security_group.db-security-group.id]
+  db_subnet_group_name   = aws_db_subnet_group.default.name
+  # Backups / Snapshots
+  skip_final_snapshot         = var.skip_final_snapshot
+  final_snapshot_identifier   = local.cluster_identifier
+  apply_immediately           = true
+  backup_retention_period     = var.db_backup_retention_period
+  preferred_backup_window     = var.db_backup_window
+  allow_major_version_upgrade = var.allow_major_version_upgrade
+  snapshot_identifier         = var.snapshot_identifier
+
+  storage_encrypted = "true"
+  kms_key_id        = var.kms_key_id
+
+  manage_master_user_password = true
+  master_username             = "postgres"
+
+  deletion_protection = var.db_deletion_protection
+  tags = (
+    var.tags
+  )
+
+  dynamic "serverlessv2_scaling_configuration" {
+    for_each = var.lower_env ? [0] : []
+    content {
+      max_capacity = var.max_serverless_capacity
+      min_capacity = 1
+    }
+  }
+
+  #Monitoring
+  enabled_cloudwatch_logs_exports = var.enabled_cloudwatch_logs_exports
+}
+
+###############################
+# 3. Create DB instances
+###############################
+
+resource "aws_rds_cluster_instance" "cluster_instances" {
+  count              = length(var.availability_zones)
+  identifier         = "${var.parent_db_name}-${count.index}"
+  cluster_identifier = aws_rds_cluster.aurora_cluster.id
+
+  instance_class               = var.is_serverless ? "db.serverless" : (count.index == 0 ? var.high_promotion_tier_instance : var.lower_promotion_tier_instance)
+  engine                       = aws_rds_cluster.aurora_cluster.engine
+  engine_version               = aws_rds_cluster.aurora_cluster.engine_version
+  availability_zone            = var.availability_zones[count.index]
+  ca_cert_identifier           = var.ca_cert_identifier
+  apply_immediately            = true
+  promotion_tier               = count.index == 0 ? local.promotion_tier_writer : local.promotion_tier_reader
+  performance_insights_enabled = true
+  auto_minor_version_upgrade   = false
+
+  # enhanced monitoring
+  monitoring_interval = var.lower_env ? 0 : 15
+  monitoring_role_arn = var.lower_env ? null : aws_iam_role.aurora_enhanced_monitoring.arn
+}
+
+###############################
+# 3. DB snapshots monitoring
+###############################
+#Custom rule that trigger every Aurora snapshot and send event to logging.
+#Needed for Grafana alerting for snapshots creation
+
+resource "aws_cloudwatch_event_rule" "vault_aurora_backup" {
+  name        = "${var.parent_db_name}-backup"
+  description = "Monitor Aurora database backups for Vault"
+
+  event_pattern = jsonencode({
+    "source" : ["aws.rds"],
+    "detail-type" : ["RDS DB Cluster Snapshot Event"],
+    "detail" : {
+      "EventCategories" : ["backup"],
+      "SourceType" : ["CLUSTER_SNAPSHOT"],
+      "Message" : ["Automated cluster snapshot created"],
+      "SourceIdentifier" : [
+        {
+          "wildcard" : "rds:${var.parent_db_name}*"
+        }
+      ]
+    }
+  })
+}
+
+resource "aws_cloudwatch_log_group" "backup_cloudwatch_logs_exports" {
+  name              = "/aws/events/${var.parent_db_name}/backup"
+  retention_in_days = var.log_retention_in_days
+  kms_key_id        = aws_kms_key.log_group_secret.arn
+
+  tags = (
+    var.tags
+  )
+}
+
+resource "aws_cloudwatch_event_target" "vault_aurora_backup" {
+  rule = aws_cloudwatch_event_rule.vault_aurora_backup.name
+  arn  = aws_cloudwatch_log_group.backup_cloudwatch_logs_exports.arn
+}
+
+
+
+
+output "rds_cluster_identifier" {
+  value = aws_rds_cluster.aurora_cluster.cluster_identifier
+}
+
+output "rds_cluster_arn" {
+  value = aws_rds_cluster.aurora_cluster.arn
+}
+
+output "rds_cluster_instance_arn" {
+  value = aws_rds_cluster_instance.cluster_instances[*].arn
+}
+output "rds_cluster_instance_identifier" {
+  value = aws_rds_cluster_instance.cluster_instances[*].identifier
+}
+
+output "rds_cluster_engine" {
+  value = aws_rds_cluster.aurora_cluster.engine
+}
+
+output "rds_cluster_engine_version" {
+  value = aws_rds_cluster.aurora_cluster.engine_version
+}
+
+output "rds_cluster_username" {
+  value = aws_rds_cluster.aurora_cluster.master_username
+}
+
+output "rds_cluster_database_name" {
+  value = aws_rds_cluster.aurora_cluster.database_name
+}
+
+output "rds_cluster_endpoint" {
+  value = aws_rds_cluster.aurora_cluster.endpoint
+}
+
+
+
+##################################################################
+# Policy for db secret password access
+###################################################################
+resource "aws_iam_policy" "tm-db-password-secret-policy" {
+  name   = "${local.name_prefix}-${var.db_name}-TMAuroraPasswordSecret"
+  path   = local.policy_path
+  policy = data.aws_iam_policy_document.tm-db-password-secret.json
+}
+
+data "aws_iam_policy_document" "tm-db-password-secret" {
+  statement {
+    sid = "DbPasswordSecret"
+    actions = [
+      "secretsmanager:GetSecretValue"
+    ]
+    effect = "Allow"
+    resources = [
+      aws_rds_cluster.aurora_cluster.master_user_secret[0].secret_arn
+    ]
+  }
+  statement {
+    sid = "DbPasswordDecryption"
+    actions = [
+      "kms:Decrypt",
+      "kms:DescribeKey"
+    ]
+    effect = "Allow"
+    resources = [
+      "arn:aws:kms:${data.aws_region.current.name}:${var.account_id}:key/${aws_rds_cluster.aurora_cluster.kms_key_id}"
+    ]
+  }
+
+  statement {
+    sid = "DbPasswordRdsDescribeClusters"
+    actions = [
+      "rds:DescribeDbClusters"
+    ]
+    effect = "Allow"
+    resources = [
+      aws_rds_cluster.aurora_cluster.arn
+    ]
+  }
+}
+
+
+
+
+########################################################
+# Security Group
+########################################################
+resource "aws_security_group" "db-security-group" {
+  name        = "${var.parent_db_name}-rds-group-cluster"
+  description = "SG for ${var.parent_db_name} RDS database."
+  vpc_id      = data.aws_cloudformation_export.vpc_id.value
+  tags        = var.tags
+
+  ingress {
+    from_port   = local.db_port
+    to_port     = local.db_port
+    protocol    = "tcp"
+    description = "RDS Database ingress for ${var.parent_db_name}"
+    cidr_blocks = [for s in data.aws_subnet.subnets : s.cidr_block]
+  }
+  egress {
+    from_port   = local.db_port
+    to_port     = local.db_port
+    protocol    = "tcp"
+    description = "RDS Database egress for ${var.parent_db_name}"
+    cidr_blocks = [for s in data.aws_subnet.subnets : s.cidr_block]
+  }
+}
+
+
+
+
+terraform {
+  required_version = ">=0.13.0"
+
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = ">= 5.22.0"
+    }
+  }
+}
+
+
+
+
+####################################################################
+# GENERAL Mandatory module variables
+####################################################################
+variable "environment" {
+  description = "The environment to deploy to"
+  type        = string
+}
+
+variable "seal_id" {
+  description = "The SEAL ID for this deployment"
+  type        = string
+}
+
+variable "deployment_id" {
+  description = "The deloyment ID to use"
+  type        = string
+}
+
+variable "backward_deployment_id" {
+  description = "The deloyment ID to use for backward compatibility with old aurora terraforms"
+  type        = string
+  default     = "0000gb"
+}
+
+variable "skip_final_snapshot" {
+  default = false
+  type    = bool
+}
+
+variable "tags" {
+  type = map(string)
+}
+
+###################################################################
+# Mandatory RDS values for this module
+###################################################################
+variable "parent_db_name" {
+  description = "The database name that this database will replicate"
+  type        = string
+}
+
+variable "db_name" {
+  description = "The name of the database replica that is being created"
+  type        = string
+
+}
+
+
+#####################################################################
+# PARENT values that can be overriden
+#
+# The following variable definitions will all default to the parent
+# database definition unless implicitly overriden
+#####################################################################
+variable "db_port" {
+  description = "The database port, if not specified will default to be the same as the parent database port"
+  type        = string
+  default     = "5432"
+}
+
+variable "high_promotion_tier_instance" {
+  description = "The type of the instance you are created with the higher promotion tier."
+  type        = string
+}
+
+variable "lower_promotion_tier_instance" {
+  description = "The type of the instance you are created with the higher promotion tier."
+  type        = string
+}
+
+variable "db_backup_window" {
+  description = "The daily time range (in UTC) during which automated backups are created if they are enabled. Must not overlap with maintenance_window"
+  type        = string
+  default     = "03:30-04:30"
+}
+
+variable "db_backup_retention_period" {
+  description = "The days to retain backups for. Must be between 0 and 35. Must be greater than 0 if the database is used as a source for a Read Replica"
+  type        = number
+  default     = 10
+}
+
+variable "db_deletion_protection" {
+  description = "If the DB instance should have deletion protection enabled. The database can't be deleted when this value is set to true."
+  type        = bool
+  default     = true
+}
+
+variable "db_parameter_cluster_group_family" {
+  description = "The family of the DB cluster parameter group."
+  type        = string
+}
+
+##################
+# SECRET MANAGER
+##################
+variable "engine" {
+  type    = string
+  default = "aurora-postgresql"
+}
+
+variable "engine_version" {
+  type = string
+}
+
+variable "account_id" {
+  description = "The AWS Account ID to deploy the System Key to"
+  type        = string
+}
+
+variable "enabled_cloudwatch_logs_exports" {
+  description = "Set of log types to export to cloudwatch"
+  type        = set(string)
+  default     = null
+}
+
+variable "log_retention_in_days" {
+  description = "Log retention in days for Aurora DB"
+  type        = number
+  default     = 7
+}
+
+variable "availability_zones" {
+  description = "Set of availability_zone for aurora deployment"
+  type        = list(string)
+  default     = null
+}
+
+variable "max_locks_per_transaction" {
+  description = "Set of max_locks_per_transaction for aurora deployment"
+  type        = number
+  default     = 2048
+}
+
+variable "max_pred_locks_per_transaction" {
+  description = "Set of max_pred_locks_per_transaction for aurora deployment"
+  type        = number
+  default     = 2048
+}
+
+variable "max_pred_locks_per_page" {
+  description = "Set of max_pred_locks_per_page for aurora deployment"
+  type        = number
+  # THUNDERBAL-161
+  default = 256
+}
+
+variable "max_logical_replication_workers" {
+  description = "Set of max_logical_replication_workers for aurora deployment"
+  type        = number
+  default     = 100
+}
+
+variable "max_worker_processes" {
+  description = "Set of max_worker_processes for aurora deployment"
+  type        = number
+  default     = 200
+}
+
+variable "password_encryption" {
+  description = "Set of password_encryption for aurora deployment"
+  type        = string
+  default     = "scram-sha-256"
+}
+
+variable "max_connections" {
+  description = "Set of max_connections for aurora deployment"
+  type        = number
+  default     = 5000
+}
+
+variable "logical_replication" {
+  description = "Set of rds.logical_replication for aurora deployment"
+  type        = number
+  default     = 1
+}
+
+variable "max_wal_senders" {
+  description = "Set of max_wal_senders for aurora deployment"
+  type        = number
+  default     = 100
+}
+
+variable "max_replication_slots" {
+  description = "Set of max_replication_slots for aurora deployment"
+  type        = number
+  default     = 100
+}
+
+variable "timezone" {
+  description = "Set of timezone for aurora deployment"
+  type        = string
+  default     = "utc"
+}
+
+variable "kms_key_id" {
+  description = "Kms key id to be used"
+  type        = string
+}
+
+variable "max_serverless_capacity" {
+  description = "max amount of ACU assigned to the cluster"
+  type        = number
+}
+
+variable "lower_env" {
+  description = "Except N, P all other environments are lower environment"
+  type        = bool
+}
+
+variable "is_serverless" {
+  description = "is it a provisioned or serverless instance"
+  type        = bool
+}
+
+variable "ca_cert_identifier" {
+  description = "Aurora DB CA certificate identifier"
+  type        = string
+}
+
+variable "allow_major_version_upgrade" {
+  description = "allows major version upgrade for cluster engine"
+  type        = bool
+}
+
+variable "detailed_logging" {
+  description = "Parameters group increased verbosity for debugging/auditing."
+  type        = bool
+  default     = false
+}
+
+variable "notice_logging" {
+  description = "Parameters group increased log level for NOTICE. Use to get quire output to logs"
+  type        = bool
+  default     = false
+}
+
+variable "snapshot_identifier" {
+  description = "snapshot identifier to restore from db"
+  type        = string
+  default     = null
+}
+
+variable "wal_receiver_timeout" {
+  description = "Sets the maximum wait time to receive data from the sending server"
+  type        = number
+  default     = 0
+}
+
+variable "wal_sender_timeout" {
+  description = "Sets the maximum time to wait for WAL replication"
+  type        = string
+  default     = 0
+}
+
+variable "logical_decoding_work_mem" {
+  description = "This much memory can be used by each internal reorder buffer before spilling to disk"
+  type        = string
+  default     = 2147483647
+}
+
+variable "wal_buffers" {
+  description = "Sets the number of disk-page buffers in shared memory for WAL."
+  type        = string
+  default     = -1
+}
+
+variable "logical_wal_cache" {
+  description = "This much memory can be used by write-through cache. 0 - Disabled"
+  type        = string
+  default     = 262143
+}
+
+
+
+
+
+
+##### Nameing Module
+
+locals {
+  sys_res_env_map = {
+    P = "PROD"
+    E = "TEST"
+    I = "TEST"
+    N = "TEST"
+    D = "DEV"
+  }
+
+  // https://confluence.dynamo.prd.aws.jpmchase.net/display/DIGPROJECT/AWS+Resources+Tagging+Standards
+  // Environment Type
+  sys_res_env = local.sys_res_env_map[upper(substr(var.environment, 0, 1))]
+}
+
+
+
+output "sys_res_env" {
+  value = local.sys_res_env
+}
+
+
+
+terraform {
+  required_version = ">= 0.12"
+}
+
+
+
+variable "environment" {
+  description = "The environment to deploy to"
+  type        = string
+}
+
+
 
