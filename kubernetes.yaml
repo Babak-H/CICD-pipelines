@@ -1274,5 +1274,384 @@ serviceAccount:
 
 
 
+##### Core Vault
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: vault-installer-debug
+  namespace: 105250-core-vault
+  annotations:
+    dynamo.certificate.tls/active: "true"
+  labels:
+    createdBy: "Billy"
+spec:
+  template:
+    metadata:
+      annotations:
+        sidecar.istio.io/inject: "false"
+    spec:
+      priorityClassName: platform-critical
+      securityContext:
+        fsGroup: 37100
+        runAsGroup: 37100
+        runAsUser: 37100
+      serviceAccountName: vault-installer-sa
+      automountServiceAccountToken: true
+      volumes:
+        - name: release-artifacts-volume
+          emptyDir: { }
+        - name: hecate-template-volume
+          emptyDir: { }
+        - name: config-templates-volume
+          emptyDir: { }
+        - name: tmp-volume
+          emptyDir: { }
+        - name: config
+          configMap:
+            name: vault-init
+      containers:
+        - name: vault-init
+          resources:
+            requests:
+              memory: "200Mi"
+              cpu: "200m"
+            limits:
+              memory: "1Gi"
+              cpu: "800m"
+          image: dockerdev.artifactory.dyn.prd.aws.jpmchase.net/container-external/docker.external.thoughtmachine.io/vault/installer/vault_installer_container:vault-3.3.3
+          imagePullPolicy: "IfNotPresent"
+          volumeMounts:
+            - mountPath: /config
+              name: config
+            - mountPath: /release-artifacts
+              name: release-artifacts-volume
+            - mountPath: /release-artifacts/hecate-templates
+              name: hecate-template-volume
+            - mountPath: /release-artifacts/config-templates
+              name: config-templates-volume
+            - mountPath: /tmp
+              name: tmp-volume
+          command: [ "/bin/bash" ]
+          args:
+            - "-ecx"
+            - >-
+              cp /config/packages.txt /release-artifacts/packages.txt;
+
+              sleep 300000;
+          lifecycle:
+            # as advised by Ahsan, adding this to cope with 5 second log scraping interval.
+            preStop:
+              exec:
+                command:
+                  - sh
+                  - -c
+                  - "sleep 10"
+          env:
+            - name: AWS_REGION
+              value: eu-west-1
+            - name: AWS_DEFAULT_REGION
+              value: eu-west-1
+            - name: AWS_STS_REGIONAL_ENDPOINTS
+              value: "regional"
+            - name: NAMESPACE
+              value: 105250-core-vault
+            - name: CONTAINER_REGISTRY
+              value: dockerdev.artifactory.dyn.prd.aws.jpmchase.net/container-external/docker.external.thoughtmachine.io
+            - name: MONITORING_NAMESPACE
+              value: 105250-core-vault-monitoring
+            - name: CROWN_WHITELIST_FILE
+              value: /release-artifacts/packages.txt
+            - name: CLOUD_PROVIDER
+              value: AWS
+      restartPolicy: Never
+      initContainers:
+        - name: copy-crown-packages
+          image: dockerdev.artifactory.dyn.prd.aws.jpmchase.net/container-external/docker.external.thoughtmachine.io/vault/installer/crown_packages:vault-3.3.3
+          command:
+            - /bin/sh
+            - -c
+            - cp -r /release-artifacts/* /release-artifacts-output/
+          volumeMounts:
+            - mountPath: /release-artifacts-output
+              name: release-artifacts-volume
+          resources:
+            requests:
+              cpu: "0.1"
+              memory: 100Mi
+            limits:
+              cpu: "0.3"
+              memory: 100Mi
+        - name: copy-config-templates
+          image: dockerdev.artifactory.dyn.prd.aws.jpmchase.net/container-external/docker.external.thoughtmachine.io/instances/common/k8s/config_templates:vault-3.3.3
+          command:
+            - /bin/sh
+            - -c
+            - cp -r /release-artifacts/config-templates/* /config-templates-out/
+          volumeMounts:
+            - mountPath: /config-templates-out
+              name: config-templates-volume
+          resources:
+            requests:
+              cpu: "0.1"
+              memory: 100Mi
+            limits:
+              cpu: "0.3"
+  backoffLimit: 1
+
+
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: vault-installer-105250-core-vault
+  namespace: 105250-core-vault
+  labels:
+    app: vault-installer
+  annotations:
+    sidecar.istio.io/inject: "false"
+spec:
+  priorityClassName: platform-critical
+  serviceAccountName: vault-installer-sa
+  automountServiceAccountToken: true
+  containers:
+    - name: vault-installer
+      image: dockerdev.artifactory.dyn.prd.aws.jpmchase.net/container-external/docker.external.thoughtmachine.io/vault/installer/vault_installer_container:2.4.0
+      env:
+        - name: CONTAINER_REGISTRY
+          value: dockerdev.artifactory.dyn.prd.aws.jpmchase.net/container-external/docker.external.thoughtmachine.io
+        - name: NAMESPACE
+          value: 105250-core-vault
+        - name: MONITORING_NAMESPACE
+          value: 105250-vault-monitoring
+        - name: CROWN_WHITELIST_FILE
+          value: /release-artifacts/packages.txt
+        - name: CLOUD_PROVIDER
+          value: AWS
+        # This variable should be set to the name of the k8s secret that contains the secret needed
+        # to pull from the remote repository
+        #- name: IMAGE_PULL_SECRETS_NAME
+        #  value: 
+      command:
+        - /bin/bash
+        - -c
+        - tail -f /dev/null
+      volumeMounts:
+        - mountPath: /release-artifacts
+          name: release-artifacts-volume
+        - mountPath: /release-artifacts/hecate-templates
+          name: hecate-template-volume
+        - mountPath: /release-artifacts/config-templates
+          name: config-templates-volume
+      resources:
+        requests:
+          cpu: "0.1"
+          memory: 100Mi
+        limits:
+          cpu: "1.0"
+          memory: 2000Mi
+  initContainers:
+    - name: copy-crown-packages
+      image: dockerdev.artifactory.dyn.prd.aws.jpmchase.net/container-external/docker.external.thoughtmachine.io/vault/installer/crown_packages:2.4.0
+      command:
+        - /bin/sh
+        - -c
+        - cp -r /release-artifacts/* /release-artifacts-output/
+      volumeMounts:
+        - mountPath: /release-artifacts-output
+          name: release-artifacts-volume
+      resources:
+        requests:
+          cpu: "0.1"
+          memory: 100Mi
+        limits:
+          cpu: "0.3"
+          memory: 100Mi
+    - name: copy-hecate-artifacts
+      image: dockerdev.artifactory.dyn.prd.aws.jpmchase.net/container-external/docker.external.thoughtmachine.io/vault/installer/hecate_container:2.4.0
+      command:
+        - /bin/sh
+        - -c
+        - cp -r /release-artifacts/hecate-templates/* /hecate-artifacts-output/
+      volumeMounts:
+        - mountPath: /hecate-artifacts-output
+          name: hecate-template-volume
+      resources:
+        requests:
+          cpu: "0.1"
+          memory: 100Mi
+        limits:
+          cpu: "0.3"
+          memory: 100Mi
+    - name: copy-config-templates
+      image: dockerdev.artifactory.dyn.prd.aws.jpmchase.net/container-external/docker.external.thoughtmachine.io/instances/common/k8s/config_templates:2.4.0
+      command:
+        - /bin/sh
+        - -c
+        - cp -r /release-artifacts/config-templates/* /config-templates-out/
+      volumeMounts:
+        - mountPath: /config-templates-out
+          name: config-templates-volume
+      resources:
+        requests:
+          cpu: "0.1"
+          memory: 100Mi
+        limits:
+          cpu: "0.3"
+          memory: 100Mi
+  volumes:
+    - name: release-artifacts-volume
+      emptyDir: { }
+    - name: hecate-template-volume
+      emptyDir: { }
+    - name: config-templates-volume
+      emptyDir: { }
+
+
+
+apiVersion: policy/v1beta1
+kind: PodSecurityPolicy
+metadata:
+  name: zookeeper-kafka-psp
+spec:
+  allowPrivilegeEscalation: false
+  allowedCapabilities:
+    - CHOWN
+    - FOWNER
+    - DAC_OVERRIDE
+  fsGroup:
+    rule: RunAsAny
+  hostPorts:
+    - max: 65535
+      min: 0
+  runAsUser:
+    rule: RunAsAny
+  seLinux:
+    rule: RunAsAny
+  supplementalGroups:
+    rule: RunAsAny
+  volumes:
+    - '*'
+
+
+
+
+    # harness.io/skip-file-for-deploy
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Values.service.name }}-job-{{ randAlphaNum 4 | lower }} # with 6 we have a problem in the certification generation as the name is too big
+  namespace: {{ .Values.namespace.operators }}
+  annotations:
+  {{- if .Values.pcaCertEnabled }}
+    pca.icb.tls/active: "true"
+    dynamo.certificate.tls/active: "false"
+    dynamo.certificate.cdb/active: "false"
+  {{ else }}
+    dynamo.certificate.tls/active: "true"
+  {{ end }}
+  labels:
+    {{- with .Values }}
+      {{- include "icb-labels.labels" . | nindent 4 }}
+    {{ end }}
+spec:
+  ttlSecondsAfterFinished: 600
+  backoffLimit: 0
+  template:
+    metadata:
+      annotations:
+        sidecar.istio.io/inject: "false"
+    spec:
+      priorityClassName: platform-critical
+      restartPolicy: Never
+      securityContext:
+        fsGroup: 999
+        runAsGroup: 999
+        runAsUser: 999
+      serviceAccountName: {{ .Values.prerequisitesDeploymentServiceAccount.name }}
+      automountServiceAccountToken: true
+      volumes:
+        - name: tmp-volume
+          emptyDir: { }
+      containers:
+        - name: vault-init
+          resources:
+            requests:
+              memory: {{ .Values.memory.request }}
+              cpu: {{ .Values.cpu.request }}
+            limits:
+              memory: {{ .Values.memory.limit }}
+          image: {{ .Values.image.host }}/dynamo-services/icb-ledgers-vault-tools:{{ .Values.vaultToolsImageTag }}
+          imagePullPolicy: "IfNotPresent"
+          volumeMounts:
+            - mountPath: /tmp
+              name: tmp-volume
+          command: [ "/bin/bash" ]
+          args:
+            - "-ecx"
+            - |
+
+              # Mount kubeconfig
+              mkdir ~/.kube;
+              bash /scripts/build-kubeconfig.sh ~/.kube/config;
+              kubectl config get-contexts;
+              
+              # Downloading the required artifacts and vaultctl binary
+              mkdir -p /tmp/tm-operator/generated-resources/operator-prerequisites && cd /tmp/tm-operator;
+              cp /release-artifacts/vaultctl .;
+              cp /release-artifacts/vault-{{ .Values.vaultVersion }}.release .;
+              chmod 700 vaultctl;
+
+              ./vaultctl version;
+              
+              # Generating the example values file basing on the list of components to be installed
+              ./vaultctl example-values \
+                -r vault-{{ .Values.vaultVersion }}.release {{ join " " .Values.componentsToBeInstalled }} \
+                > /tmp/tm-operator/generated-resources/{{ .Values.vaultVersion }}-example-values.yaml;
+              
+              {{ if eq .Values.dumpResourcesToBeInstalled "false" }}
+              # If new operators will be deployed, remove the currently deployed instances
+              kubectl delete deployment crown-operator -n $OPERATORS_NAMESPACE --ignore-not-found=true;
+              kubectl delete deployment tmcomponent-operator -n $OPERATORS_NAMESPACE --ignore-not-found=true;
+              {{ end }}
+              
+              # Deploy crown and tmcomponent operator deployments or dump the resources to be deployed into the specific directory
+              ./vaultctl init-operators \
+                -d {{ .Values.image.host }}/container-external/docker.external.thoughtmachine.io \
+                --context inCluster --cloud-provider=aws --distribution=eks \
+                --crown-operator-namespace=$OPERATORS_NAMESPACE \
+                --crown-operator-service-account={{ .Values.operatorsPrerequisites.vaultOperatorsServiceAccount.name }} \
+                --tmcomponent-operator-namespace=$OPERATORS_NAMESPACE \
+                --tmcomponent-operator-service-account={{ .Values.operatorsPrerequisites.vaultOperatorsServiceAccount.name }} \
+                --check-vault-role-name={{ .Values.operatorsPrerequisites.checkVaultRole }} \
+                --check-vault-role-binding={{ .Values.operatorsPrerequisites.checkVaultRoleBinding }} \
+                --istio-role-name={{ .Values.operatorsPrerequisites.istioRole }} \
+                --istio-role-binding={{ .Values.operatorsPrerequisites.istioRoleBinding }}{{ if eq .Values.dumpResourcesToBeInstalled "true" }} \
+                --export-dir=/tmp/tm-operator/generated-resources/operator-prerequisites{{ end }};
+              
+              {{ if eq .Values.dumpResourcesToBeInstalled "true" }}
+              sleep 7200
+              {{ end }}
+
+          env:
+            - name: CLOUD_PROVIDER
+              value: AWS
+            - name: AWS_STS_REGIONAL_ENDPOINTS
+              value: "regional"
+            - name: AWS_REGION
+              value: {{ .Values.region }}
+            - name: AWS_DEFAULT_REGION
+              value: {{ .Values.region }}
+            - name: OPERATORS_NAMESPACE
+              value: {{ .Values.namespace.operators }}
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  - sh
+                  - -c
+                  - "sleep 10"    
+
+
 
 
