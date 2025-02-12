@@ -1041,9 +1041,101 @@ https://sre.google/workbook/alerting-on-slos/
 Kafka-console-consumer --bootstrap-server $BOOTSTRAP_SERVER:9092 --offset 1 --partition 1 --max-messages 1 --value-deserializer "org.apache.kafka.common.serialization.BytesDeserializer" --consumer.config /home/appuser/conect.properties --topic $topic_name
 
 
-
-
 https://docs.aws.amazon.com/privateca/latest/userguide/PcaKubernetes.html
 https://github.com/cert-manager/aws-privateca-issuer
 https://docs.aws.amazon.com/privateca/latest/userguide/PcaWelcome.html
 https://docs.aws.amazon.com/privateca/latest/userguide/ca-lifecycle.html
+
+
+
+https://kyverno.io/docs/writing-policies/mutate/
+https://github.com/kyverno/kyverno/wiki/Mutating-Webhook
+https://medium.com/@rodrigofk/automating-kubernetes-workflows-with-kyvernos-mutating-webhooks-ae3f0a81d4d7
+https://medium.com/miro-engineering/optimizing-kubernetes-scalability-and-cost-efficiency-with-karpenter-356153fcf546
+https://medium.com/itnext/karpenter-open-source-high-performance-kubernetes-cluster-autoscaler-d56e3ab06aae
+https://cert-manager.io/docs/concepts/webhook/
+https://cert-manager.io/v1.5-docs/concepts/webhook/
+https://github.com/cert-manager/webhook-example
+
+Secret-store csi driver
+
+
+
+## k8s_aliases.sh
+
+#!/bin/bash
+
+# Function to get all pods in the current namespace
+function kpods() {
+  kubectl get pods "$@"
+}
+
+# Function to describe a pod
+function kdesc() {
+  kubectl describe pod "$@"
+}
+
+# Function to get logs from a pod
+function klogs() {
+  kubectl logs "$@"
+}
+
+# Function to switch namespaces
+function kns() {
+  kubectl config set-context --current --namespace="$1"
+}
+
+# Function to get all services in the current namespace
+function ksvc() {
+  kubectl get svc "$@"
+}
+
+# Function to apply a configuration file
+function kapply() {
+  kubectl apply -f "$@"
+}
+
+# Function to delete a resource
+function kdel() {
+  kubectl delete "$@"
+}
+
+# Function to get the current context
+function kctx() {
+  kubectl config current-context
+}
+
+# Function to list all contexts
+function kctxs() {
+  kubectl config get-contexts
+}
+
+# Function to switch context
+function kswitch() {
+  kubectl config use-context "$1"
+}
+
+# Function to get all deployments in the current namespace
+function kdeploy() {
+  kubectl get deployments "$@"
+}
+
+# Function to get all nodes
+function knodes() {
+  kubectl get nodes "$@"
+}
+
+
+
+
+
+https://ohmyz.sh/
+https://github.com/ohmyzsh/ohmyzsh
+
+
+https://github.com/omerbsezer/Fast-AWS/blob/main/HANDS-ON-010-MLOps-SageMaker-GitHub-Codepipeline-CodeBuild-CodeDeploy.md
+
+
+https://github.com/omerbsezer/Fast-AWS/blob/main/HANDS-ON-009-GitlabServer-on-Premise-GitlabRunner-on-EC2.md
+
+https://github.com/omerbsezer/Fast-AWS/blob/main/HANDS-ON-006-EKS-ManagedNodes-Blueprint.md
