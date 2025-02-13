@@ -1,0 +1,985 @@
+apiVersion: v2
+description: A Helm chart for borrow-eligibility-service
+name: borrow-eligibility-service
+dependencies:
+  - name: icb-labels
+    version: ~0.2.0
+    repository: https://artifactory.dyn.prd.aws.jpmchase.net/artifactory/helmdev
+version: 1.0.0
+
+
+
+
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: {{ .Values.service.name }}
+  namespace: {{ .Values.service.namespace }}
+  labels:
+    {{- with .Values }}
+      {{- include "icb-labels.labels" . | nindent 4 }}
+    {{end}}
+spec:
+  action: ALLOW
+  rules:
+    - to:
+        - operation:
+            paths:
+              - "/actuator/info"
+              - "/actuator/health*"
+              - "/actuator/prometheus"
+            ports:
+              - "9090"
+        {{- if .Values.istio.allowed }}
+        {{ tpl (toYaml .Values.istio.allowed) . | nindent 8 }}
+        {{- end }}
+    - from:
+        - source:
+            requestPrincipals:
+              - dynamo-api-gateway.jpmorgan.com/*
+              - tenx-platform.com/*
+      to:
+        - operation:
+            methods: [ "GET" ]
+            paths: [ "/api/v1/borrow/eligibility/*" ]
+            ports:
+              - "8080"
+    - from:
+        - source:
+            principals: [ "cluster.local/ns/105250-orchestration-onboarding/sa/orchestration-onboarding" ]
+      to:
+        - operation:
+            methods: [ "POST" ]
+            paths: [ "/api/v1/borrow/eligibility/create-account" ]
+            ports:
+              - "8080"
+    - from:
+        - source:
+            principals: [ "cluster.local/ns/105250-orchestration-onboarding/sa/orchestration-onboarding" ]
+      to:
+        - operation:
+            methods: [ "PATCH" ]
+            paths: [ "/api/v1/borrow/eligibility/*" ]
+            ports:
+              - "8080"
+    {{- if .Values.test.allowed }}
+    - from:
+        - source:
+            principals: [ "cluster.local/ns/105250-borrow/sa/borrow-test-proxy-service" ]
+      to:
+        - operation:
+            methods: [ "POST" ]
+            paths: [ "/api/v1/borrow/eligibility/create-account" ]
+            ports:
+              - "8080"
+    {{- end }}
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/105250-customer-graph/sa/graph-gateway-service
+      to:
+        - operation:
+            methods:
+              - "POST"
+              - "GET"
+            paths:
+              - "/graphql*"
+            ports: [ '8080' ]
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Values.service.name }}
+
+
+
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.service.name }}
+  namespace: {{ .Values.service.namespace }}
+  annotations:
+    dynamo.certificate.tls/active: "false"
+    pca.icb.tls/active: "true"
+  labels:
+    {{- with .Values }}
+      {{- include "icb-labels.labels" . | nindent 4 }}
+    {{end}}
+spec:
+  replicas: {{ .Values.resources.replicas }}
+  progressDeadlineSeconds: 540
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: {{ .Values.deployment.maxSurge }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Values.service.name }}
+  template:
+    metadata:
+      labels:
+      {{- with .Values }}
+        {{- include "icb-labels.labels" . | nindent 8 }}
+      {{end}}
+      annotations:
+        proxy.istio.io/config: '{"holdApplicationUntilProxyStarts":true,"terminationDrainDuration":"{{ .Values.terminationDrainDuration }}"}'
+        {{- if .Values.istio.excludeOutboundPorts }}
+        traffic.sidecar.istio.io/excludeOutboundPorts: {{ .Values.istio.excludeOutboundPorts | quote }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ .Values.service.name }}
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: {{ .Values.service.name }}
+              topologyKey: kubernetes.io/hostname
+      securityContext:
+        fsGroup: 1000
+        runAsUser: 1000
+        runAsGroup: 1000
+      containers:
+        - name: service
+          image: "{{ .Values.image.repository }}/{{ .Values.service.name }}:{{ .Values.image.tag }}"
+          imagePullPolicy: Always
+          securityContext:
+            capabilities:
+              drop:
+                - ALL
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+            - name: http-actuator
+              containerPort: 9090
+              protocol: TCP
+          resources:
+            requests:
+              cpu: "{{ .Values.resources.requests.cpu }}"
+              memory: "{{ .Values.resources.requests.memory }}"
+            limits:
+              memory: "{{ .Values.resources.limits.memory }}"
+          env:
+            - name: MANAGEMENT_SERVER_PORT
+              value: "9090"
+            - name: SERVER_PORT
+              value: "8080"
+            - name: AWS_REGION
+              value: eu-west-1
+            - name: AWS_STS_REGIONAL_ENDPOINTS
+              value: REGIONAL
+          {{- if .Values.env }}
+          {{ tpl (toYaml .Values.env) . | nindent 12}}
+          {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 9090
+              scheme: HTTP
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            failureThreshold: 6
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 9090
+              scheme: HTTP
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            failureThreshold: 6
+            timeoutSeconds: 10
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: "topology.kubernetes.io/zone"
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: {{ .Values.service.name }}
+
+
+
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: "{{ .Values.service.name }}"
+  namespace: "{{ .Values.service.namespace }}"
+  labels:
+    {{- with .Values }}
+      {{- include "icb-labels.labels" . | nindent 4 }}
+    {{end}}
+    component: ingress
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    nginx.ingress.kubernetes.io/service-upstream: "true"
+    nginx.ingress.kubernetes.io/ssl-passthrough: "false"
+    nginx.ingress.kubernetes.io/backend-protocol: HTTP
+    nginx.ingress.kubernetes.io/upstream-vhost: "{{ .Values.service.name }}.{{ .Values.service.namespace }}.svc.cluster.local"
+spec:
+  rules:
+    - host: "{{ .Values.gatewayIngress.host }}"
+      http:
+        paths:
+          - path: "/{{ .Values.service.name }}(/|$)(.*)"
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: "{{ .Values.service.name }}"
+                port:
+                  number: 80
+  tls:
+    - hosts:
+        - "{{ .Values.gatewayIngress.host }}"
+
+
+
+
+
+
+
+apiVersion: dynamo.jpmorgan.com/v1
+kind: KafkaTopic # Do not change
+metadata:
+  namespace: "{{ .Values.service.namespace }}"
+  name: chase.borrow.check-eligibility-response-v006
+  labels:
+    {{- with .Values }}
+      {{- include "icb-labels.labels" . | nindent 4 }}
+    {{end}}
+spec:
+  name: chase.borrow.check-eligibility-response-v006
+  partitions: {{ .Values.kafka.partitions }}
+  producers:
+    - name: {{ .Values.service.name }}
+  consumers:
+    - name: borrow-perf-test-sentinel-service
+    - name: orchestration-onboarding
+    - name: borrow-test-proxy-service
+---
+apiVersion: dynamo.jpmorgan.com/v1
+kind: KafkaTopic # Do not change
+metadata:
+  namespace: "{{ .Values.service.namespace }}"
+  name: chase.borrow.check-eligibility-request-v009
+  labels:
+    {{- with .Values }}
+      {{- include "icb-labels.labels" . | nindent 4 }}
+    {{end}}
+spec:
+  name: chase.borrow.check-eligibility-request-v009
+  partitions: {{ .Values.kafka.partitions }}
+  producers:
+    - name: borrow-perf-test-sentinel-service
+    - name: orchestration-onboarding
+    - name: borrow-test-proxy-service
+    - name: borrow-outbox-service
+  consumers:
+    - name: {{ .Values.service.name }}
+    - name: dna-kafka-connect-chase
+      consumerGroupPrefix: connect-chase-
+    - name: stream-iceberg-ingester # Data Engineering
+      consumerGroupPrefix: stream-iceberg-chase-
+---
+apiVersion: dynamo.jpmorgan.com/v1
+kind: KafkaTopic # Do not change
+metadata:
+  namespace: "{{ .Values.service.namespace }}"
+  name: chase.borrow.check-eligibility-request-v009.triage
+  labels:
+    {{- with .Values }}
+      {{- include "icb-labels.labels" . | nindent 4 }}
+    {{end}}
+spec:
+  name: chase.borrow.check-eligibility-request-v009.triage
+  partitions: {{ .Values.kafka.triage.partitions }}
+  producers:
+    - name: {{ .Values.service.name }}
+  consumers:
+    - name: {{ .Values.service.name }}
+---
+apiVersion: dynamo.jpmorgan.com/v1
+kind: KafkaTopic # Do not change
+metadata:
+  namespace: "{{ .Values.service.namespace }}"
+  name: chase.borrow.check-eligibility-request-v009.recovery
+  labels:
+    {{- with .Values }}
+      {{- include "icb-labels.labels" . | nindent 4 }}
+    {{end}}
+spec:
+  name: chase.borrow.check-eligibility-request-v009.recovery
+  partitions: {{ .Values.kafka.recovery.partitions }}
+  producers:
+    - name: {{ .Values.service.name }}
+  consumers:
+    - name: {{ .Values.service.name }}
+---
+apiVersion: dynamo.jpmorgan.com/v1
+kind: KafkaTopic # Do not change
+metadata:
+  namespace: "{{ .Values.service.namespace }}"
+  name: chase.borrow.eligibility-application-response-v005
+  labels:
+    {{- with .Values }}
+      {{- include "icb-labels.labels" . | nindent 4 }}
+    {{end}}
+spec:
+  name: chase.borrow.eligibility-application-response-v005
+  partitions: {{ .Values.kafka.partitions }}
+  producers:
+    - name: {{ .Values.service.name }}
+  consumers:
+    - name: borrow-perf-test-sentinel-service
+    - name: orchestration-onboarding
+    - name: borrow-test-proxy-service
+---
+apiVersion: dynamo.jpmorgan.com/v1
+kind: KafkaTopic # Do not change
+metadata:
+  namespace: "{{ .Values.service.namespace }}"
+  name: chase.borrow.eligibility-application-request-v004
+  labels:
+    {{- with .Values }}
+      {{- include "icb-labels.labels" . | nindent 4 }}
+    {{end}}
+spec:
+  name: chase.borrow.eligibility-application-request-v004
+  partitions: {{ .Values.kafka.partitions }}
+  producers:
+    - name: borrow-perf-test-sentinel-service
+    - name: orchestration-onboarding
+    - name: borrow-test-proxy-service
+    - name: borrow-outbox-service
+  consumers:
+    - name: {{ .Values.service.name }}
+    - name: dna-kafka-connect-chase
+      consumerGroupPrefix: connect-chase-
+    - name: stream-iceberg-ingester # Data Engineering
+      consumerGroupPrefix: stream-iceberg-chase-
+---
+apiVersion: dynamo.jpmorgan.com/v1
+kind: KafkaTopic # Do not change
+metadata:
+  namespace: "{{ .Values.service.namespace }}"
+  name: chase.borrow.eligibility-application-request-v004.triage
+  labels:
+    {{- with .Values }}
+      {{- include "icb-labels.labels" . | nindent 4 }}
+    {{end}}
+spec:
+  name: chase.borrow.eligibility-application-request-v004.triage
+  partitions: {{ .Values.kafka.triage.partitions }}
+  producers:
+    - name: {{ .Values.service.name }}
+  consumers:
+    - name: {{ .Values.service.name }}
+---
+apiVersion: dynamo.jpmorgan.com/v1
+kind: KafkaTopic # Do not change
+metadata:
+  namespace: "{{ .Values.service.namespace }}"
+  name: chase.borrow.eligibility-application-request-v004.recovery
+  labels:
+    {{- with .Values }}
+      {{- include "icb-labels.labels" . | nindent 4 }}
+    {{end}}
+spec:
+  name: chase.borrow.eligibility-application-request-v004.recovery
+  partitions: {{ .Values.kafka.recovery.partitions }}
+  producers:
+    - name: {{ .Values.service.name }}
+  consumers:
+    - name: {{ .Values.service.name }}
+---
+apiVersion: dynamo.jpmorgan.com/v1
+kind: KafkaTopic # Do not change
+metadata:
+  namespace: "{{ .Values.service.namespace }}"
+  name: chase.borrow.eligibility-entity-events-v011
+  labels:
+    {{- with .Values }}
+      {{- include "icb-labels.labels" . | nindent 4 }}
+    {{end}}
+spec:
+  name: chase.borrow.eligibility-entity-events-v011
+  partitions: {{ .Values.kafka.partitions }}
+  producers:
+    - name: {{ .Values.service.name }}
+    - name: borrow-outbox-service
+  consumers:
+    - name: borrow-test-proxy-service
+    - name: dna-kafka-connect-chase
+      consumerGroupPrefix: connect-chase-
+    - name: stream-iceberg-ingester # Data Engineering
+      consumerGroupPrefix: stream-iceberg-chase-
+    - name: data-ice
+---
+apiVersion: dynamo.jpmorgan.com/v1
+kind: KafkaTopic # Do not change
+metadata:
+  namespace: "{{ .Values.service.namespace }}"
+  name: chase.borrow.loan-eligibility-request-v001
+  labels:
+    {{- with .Values }}
+      {{- include "icb-labels.labels" . | nindent 4 }}
+    {{end}}
+spec:
+  name: chase.borrow.loan-eligibility-request-v001
+  partitions: {{ .Values.kafka.partitions }}
+  producers:
+    - name: borrow-perf-test-sentinel-service
+    - name: orchestration-onboarding
+    - name: borrow-test-proxy-service
+    - name: borrow-outbox-service
+  consumers:
+    - name: {{ .Values.service.name }}
+    - name: dna-kafka-connect-chase
+      consumerGroupPrefix: connect-chase-
+    - name: stream-iceberg-ingester # Data Engineering
+      consumerGroupPrefix: stream-iceberg-chase-
+---
+apiVersion: dynamo.jpmorgan.com/v1
+kind: KafkaTopic # Do not change
+metadata:
+  namespace: "{{ .Values.service.namespace }}"
+  name: chase.borrow.loan-eligibility-request-v001.recovery
+  labels:
+    {{- with .Values }}
+      {{- include "icb-labels.labels" . | nindent 4 }}
+    {{end}}
+spec:
+  name: chase.borrow.loan-eligibility-request-v001.recovery
+  partitions: {{ .Values.kafka.recovery.partitions }}
+  producers:
+    - name: {{ .Values.service.name }}
+  consumers:
+    - name: {{ .Values.service.name }}
+---
+apiVersion: dynamo.jpmorgan.com/v1
+kind: KafkaTopic # Do not change
+metadata:
+  namespace: "{{ .Values.service.namespace }}"
+  name: chase.borrow.loan-eligibility-request-v001.triage
+  labels:
+    {{- with .Values }}
+      {{- include "icb-labels.labels" . | nindent 4 }}
+    {{end}}
+spec:
+  name: chase.borrow.loan-eligibility-request-v001.triage
+  partitions: {{ .Values.kafka.triage.partitions }}
+  producers:
+    - name: {{ .Values.service.name }}
+  consumers:
+    - name: {{ .Values.service.name }}
+---
+apiVersion: dynamo.jpmorgan.com/v1
+kind: KafkaTopic # Do not change
+metadata:
+  namespace: "{{ .Values.service.namespace }}"
+  name: chase.borrow.loan-eligibility-response-v001
+  labels:
+    {{- with .Values }}
+      {{- include "icb-labels.labels" . | nindent 4 }}
+    {{end}}
+spec:
+  name: chase.borrow.loan-eligibility-response-v001
+  partitions: {{ .Values.kafka.partitions }}
+  producers:
+    - name: {{ .Values.service.name }}
+  consumers:
+    - name: borrow-perf-test-sentinel-service
+    - name: orchestration-onboarding
+    - name: borrow-test-proxy-service
+---
+apiVersion: dynamo.jpmorgan.com/v1
+kind: KafkaTopic # Do not change
+metadata:
+  namespace: "{{ .Values.service.namespace }}"
+  name: chase.borrow.loan-application-request-v001
+  labels:
+    {{- with .Values }}
+      {{- include "icb-labels.labels" . | nindent 4 }}
+    {{end}}
+spec:
+  name: chase.borrow.loan-application-request-v001
+  partitions: {{ .Values.kafka.partitions }}
+  producers:
+    - name: borrow-perf-test-sentinel-service
+    - name: orchestration-onboarding
+    - name: borrow-test-proxy-service
+    - name: borrow-outbox-service
+  consumers:
+    - name: {{ .Values.service.name }}
+    - name: dna-kafka-connect-chase
+      consumerGroupPrefix: connect-chase-
+    - name: stream-iceberg-ingester # Data Engineering
+      consumerGroupPrefix: stream-iceberg-chase-
+---
+apiVersion: dynamo.jpmorgan.com/v1
+kind: KafkaTopic # Do not change
+metadata:
+  namespace: "{{ .Values.service.namespace }}"
+  name: chase.borrow.loan-application-request-v001.recovery
+  labels:
+    {{- with .Values }}
+      {{- include "icb-labels.labels" . | nindent 4 }}
+    {{end}}
+spec:
+  name: chase.borrow.loan-application-request-v001.recovery
+  partitions: {{ .Values.kafka.recovery.partitions }}
+  producers:
+    - name: {{ .Values.service.name }}
+  consumers:
+    - name: {{ .Values.service.name }}
+---
+apiVersion: dynamo.jpmorgan.com/v1
+kind: KafkaTopic # Do not change
+metadata:
+  namespace: "{{ .Values.service.namespace }}"
+  name: chase.borrow.loan-application-request-v001.triage
+  labels:
+    {{- with .Values }}
+      {{- include "icb-labels.labels" . | nindent 4 }}
+    {{end}}
+spec:
+  name: chase.borrow.loan-application-request-v001.triage
+  partitions: {{ .Values.kafka.triage.partitions }}
+  producers:
+    - name: {{ .Values.service.name }}
+  consumers:
+    - name: {{ .Values.service.name }}
+---
+apiVersion: dynamo.jpmorgan.com/v1
+kind: KafkaTopic # Do not change
+metadata:
+  namespace: "{{ .Values.service.namespace }}"
+  name: chase.borrow.loan-application-response-v001
+  labels:
+    {{- with .Values }}
+      {{- include "icb-labels.labels" . | nindent 4 }}
+    {{end}}
+spec:
+  name: chase.borrow.loan-application-response-v001
+  partitions: {{ .Values.kafka.partitions }}
+  producers:
+    - name: {{ .Values.service.name }}
+  consumers:
+    - name: borrow-perf-test-sentinel-service
+    - name: orchestration-onboarding
+    - name: borrow-test-proxy-service
+---
+apiVersion: dynamo.jpmorgan.com/v1
+kind: KafkaTopic
+metadata:
+  namespace: "{{ .Values.service.namespace }}"
+  name: chase.borrow.cache-refresh-signal-event-v001
+  labels:
+    {{- with .Values }}
+      {{- include "icb-labels.labels" . | nindent 4 }}
+    {{end}}
+spec:
+  name: chase.borrow.cache-refresh-signal-event-v001
+  partitions: 1
+  producers:
+    - name: borrow-product-offering-service
+    - name: borrow-analytics-facade
+    - name: borrow-affordability-service
+    - name: borrow-credit-contract-service
+    - name: borrow-credit-bureau-adapter-service
+    - name: borrow-equifax-adapter
+  consumers:
+    - name: borrow-product-offering-service
+    - name: borrow-affordability-service
+    - name: borrow-analytics-facade
+    - name: {{ .Values.service.name }}
+    - name: borrow-credit-contract-service
+    - name: borrow-credit-bureau-adapter-service
+    - name: borrow-equifax-adapter
+
+
+
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: "{{ .Values.service.namespace }}"
+  labels:
+    name: "{{ .Values.service.namespace }}"
+    spyder_mesh_id: svcs-mesh
+    app.kubernetes.io/name: {{ .Values.service.namespace }}
+    {{- with .Values }}
+      {{- include "icb-labels.namespace" . | nindent 4 }}
+    {{end}}
+
+
+
+
+
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: "{{ .Values.service.name }}"
+  namespace: "{{ .Values.service.namespace }}"
+  labels:
+    {{- with .Values }}
+      {{- include "icb-labels.labels" . | nindent 4 }}
+    {{end}}
+spec:
+  mtls:
+    mode: STRICT
+  portLevelMtls:
+    "9090":
+      #      allow management port to be accessed using plain text (no mTLS)
+      mode: PERMISSIVE
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: "{{ .Values.service.name }}"
+
+
+
+
+
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ .Values.service.name }}-pdb
+  namespace: {{ .Values.service.namespace }}
+  labels:
+    {{- with .Values}}
+      {{- include "icb-labels.labels" . | nindent 4 }}
+    {{- end}}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Values.service.name | quote }}
+  maxUnavailable: {{ .Values.resources.maxUnavailable }}
+
+
+
+
+
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: "{{ .Values.service.name }}"
+  namespace: "{{ .Values.service.namespace }}"
+  labels:
+    {{- with .Values }}
+      {{- include "icb-labels.labels" . | nindent 4 }}
+    {{end}}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io.name: "{{ .Values.service.name }}"
+  podMetricsEndpoints:
+    - port: http-actuator
+      path: /actuator/prometheus
+      relabelings:
+        - sourceLabels: [__meta_kubernetes_pod_label_app_kubernetes_io_version]
+          targetLabel: version
+        - sourceLabels: [__meta_kubernetes_pod_label_dynamo_jpmchase_com_deployment_id]
+          targetLabel: deployment_id
+        - sourceLabels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+          targetLabel: service
+
+
+
+
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: "{{ .Values.service.name }}"
+  namespace: "{{ .Values.service.namespace }}"
+  labels:
+    {{- with .Values }}
+      {{- include "icb-labels.labels" . | nindent 4 }}
+    {{end}}
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+    - name: http-actuator # the 'http' prefix tells Istio that calls to this service are HTTP
+      port: 9090
+      targetPort: 9090
+  selector:
+    app.kubernetes.io/name: {{ .Values.service.name }}
+
+
+
+
+
+apiVersion: networking.istio.io/v1alpha3
+kind: VirtualService
+metadata:
+  name: "{{ .Values.service.name }}"
+  namespace: "{{ .Values.service.namespace }}"
+  labels:
+    {{- with .Values }}
+      {{- include "icb-labels.labels" . | nindent 4 }}
+    {{end}}
+spec:
+  hosts:
+    - "{{ .Values.service.name }}.{{ .Values.service.namespace }}.svc.cluster.local"
+  http:
+    - route:
+        - destination:
+            host: "{{ .Values.service.name }}.{{ .Values.service.namespace }}.svc.cluster.local"
+
+
+
+
+
+
+service:
+  name: borrow-eligibility-service
+  namespace: 105250-borrow
+  category: S1
+  sealId: "105250"
+  tribe: Borrow
+  squad: BW_LON16A_BorrowMoney_Origination
+  manager: helm
+
+image:
+  repository: dockerdev.artifactory.dyn.prd.aws.jpmchase.net/dynamo-services
+  tag: <+serviceVariables.chartVersion>
+
+resources:
+  maxUnavailable: 1
+  replicas: 1
+  requests:
+    cpu: "500m"
+    memory: "1.5Gi"
+  limits:
+    memory: "1.5Gi"
+
+jvm:
+  maxHeapSize: "512m"
+  minHeapSize: "512m"
+  options: "-XX:+UseG1GC"
+
+deployment:
+  maxSurge: 100%
+
+runAsNonRoot: true
+fsGroup: 999
+terminationDrainDuration: 10s
+
+test:
+  allowed: false
+
+env:
+  - name: BOOTSTRAP_SERVERS
+    value: "core-kafka.105250-kafka.svc.cluster.local:9092"
+  - name: SCHEMA_REGISTRY_URL
+    value: "https://core-schema-registry.105250-kafka.svc.cluster.local:8081"
+  - name: SPRING_DATASOURCE_URL
+    value: "jdbc:postgresql://cockroach-public:26257/borrow_eligibility_service?\
+            ApplicationName=borrow-eligibility-service&\
+            tcpKeepAlive=true&\
+            sslmode=verify-full&\
+            sslrootcert=/certs/ca.crt&\
+            sslcert=/certs/tls.crt&\
+            sslkey=/certs/key.der&\
+            gssEncMode=disable"
+  - name: SPRING_DATASOURCE_USERNAME
+    value: "borrow_eligibility_service"
+  - name: SPRING_ZIPKIN_BASEURL
+    value: "http://jaeger.105250-core-eng-platform.svc.cluster.local/"
+  - name: SPRING_TASK_SCHEDULING_POOL_SIZE
+    value: "{{ .Values.task.scheduling.pool.size }}"
+  - name: KAFKA_LISTENERS_CONCURRENCY
+    value: "{{ .Values.kafka.listeners.concurrency }}"
+  - name: KAFKA_LISTENERS_AUTO_OFFSET_RESET
+    value: "{{ .Values.kafka.listeners.autoOffsetReset }}"
+  - name: KAFKA_LISTENERS_GROUP_ID
+    value: "{{ .Values.kafka.listeners.groupId }}"
+  - name: MAX_DB_RETRY
+    value: "{{ .Values.db.maxretry }}"
+  - name: DB_WAIT_BETWEEN_RETRIES
+    value: "{{ .Values.db.retryInterval }}"
+  - name: ELIGIBILITY_REQUEST_CONCURRENCY
+    value: "{{ .Values.kafka.listeners.creditcard.eligibility.concurrency }}"
+  - name: APPLICATION_REQUEST_CONCURRENCY
+    value: "{{ .Values.kafka.listeners.creditcard.applicationRequest.concurrency }}"
+  - name: TEMPORAL_TARGET
+    value: "{{ .Values.temporal.target }}"
+  - name: TEMPORAL_NAMESPACE
+    value: "{{ .Values.temporal.namespace }}"
+  - name: TEMPORAL_SSL_ENABLED
+    value: "{{ .Values.temporal.ssl_enabled }}"
+  - name: TEMPORAL_ENCRYPTION_ENABLED
+    value: "{{ .Values.temporal.encryption.enabled }}"
+  - name: TEMPORAL_ENCRYPTION_KMS_KEY
+    value: "{{ .Values.temporal.encryption.kmsKey }}"
+  - name: TEMPORAL_MAX_WORKFLOW_THREAD_COUNT
+    value: "{{ .Values.temporal.workerFactory.maxWorkflowThreadCount }}"
+  - name: TEMPORAL_WORKFLOW_CACHE_SIZE
+    value: "{{ .Values.temporal.workerFactory.workflowCacheSize }}"
+  - name: TEMPORAL_WORKFLOW_WORKER_MAX_CONCURRENT_WORKFLOW_TASK_POLLERS
+    value: "{{ .Values.temporal.defaultWfWorker.maxConcurrentWorkflowTaskPollers }}"
+  - name: TEMPORAL_WORKFLOW_WORKER_MAX_CONCURRENT_WORKFLOW_TASK_EXECUTION_SIZE
+    value: "{{ .Values.temporal.defaultWfWorker.maxConcurrentWorkflowTaskExecutionSize }}"
+  - name: TEMPORAL_WORKFLOW_WORKER_DEADLOCK_DETECTION_TIMEOUT_MS
+    value: "{{ .Values.temporal.defaultWfWorker.deadlockDetectionTimeoutMs }}"
+  - name: TEMPORAL_ACTIVITY_WORKER_MAX_CONCURRENT_ACTIVITY_TASK_POLLERS
+    value: "{{ .Values.temporal.defaultActWorker.maxConcurrentActivityTaskPollers }}"
+  - name: TEMPORAL_ACTIVITY_WORKER_MAX_CONCURRENT_ACTIVITY_EXECUTION_SIZE
+    value: "{{ .Values.temporal.defaultActWorker.maxConcurrentActivityExecutionSize }}"
+  - name: TEMPORAL_ACTIVITY_WORKER_MAX_CONCURRENT_LOCAL_ACTIVITY_EXECUTION_SIZE
+    value: "{{ .Values.temporal.defaultActWorker.maxConcurrentLocalActivityExecutionSize }}"
+  - name: TEMPORAL_ACTIVITY_OPTIONS_START_TO_CLOSE_TIMEOUT_SECS
+    value: "{{ .Values.temporal.defaultActOptions.startToCloseTimeoutSecs }}"
+  - name: TEMPORAL_ACTIVITY_RETRY_OPTIONS_INITIAL_INTERVAL_MS
+    value: "{{ .Values.temporal.defaultActOptions.retry.initialIntervalMs }}"
+  - name: TEMPORAL_ACTIVITY_RETRY_OPTIONS_MAXIMUM_INTERVAL_SECS
+    value: "{{ .Values.temporal.defaultActOptions.retry.maximumIntervalSecs }}"
+  - name: TEMPORAL_ACTIVITY_RETRY_OPTIONS_BACKOFF_COEFFICIENT
+    value: "{{ .Values.temporal.defaultActOptions.retry.backoffCoefficient }}"
+  - name: TEMPORAL_ACTIVITY_RETRY_OPTIONS_MAX_ATTEMPTS
+    value: "{{ .Values.temporal.defaultActOptions.retry.maximumAttempts }}"
+  - name: INCOME_EXPENSE_FIELDS_ENCRYPTION_ENABLED
+    value: "{{ .Values.encryption.incomeExpenseFields.enabled }}"
+  - name: ENCRYPTION_CACHE_WARM_REFRESH_INTERVAL_MS
+    value: "{{ .Values.encryption.cache.refreshIntervalMillis }}"
+  - name: ENCRYPTION_CACHE_WARM_INITIAL_DEALY_MS
+    value: "{{ .Values.encryption.cache.initialDelayMillis }}"
+  - name: INCOME_EXPENSE_FIELDS_ENCRYPTION_KMS_KEY
+    value: "{{ .Values.encryption.incomeExpenseFields.kmsKey }}"
+  - name: KAFKA_RETRY_MAIN_MAX_ATTEMPTS_COUNT
+    value: "{{ .Values.kafka.retry.main.maxAttemptsCount }}"
+  - name: KAFKA_RETRY_MAIN_BACK_OFF
+    value: "{{ .Values.kafka.retry.main.backoffInterval }}"
+  - name: KAFKA_RETRY_RECOVERY_MAX_ATTEMPTS_COUNT
+    value: "{{ .Values.kafka.retry.recovery.maxAttemptsCount }}"
+  - name: KAFKA_RETRY_RECOVERY_BACK_OFF
+    value: "{{ .Values.kafka.retry.recovery.backoffInterval }}"
+  - name: LOAN_ELIGIBILITY_REQUEST_CONCURRENCY
+    value: "{{ .Values.kafka.listeners.loan.eligibility.concurrency }}"
+  - name: LOAN_APPLICATION_REQUEST_CONCURRENCY
+    value: "{{ .Values.kafka.listeners.loan.application.concurrency }}"
+  - name: BUREAU_HIERARCHY
+    value: "{{ .Values.bureau.hierarchy }}"
+  - name: JAVA_TOOL_OPTIONS
+    value: "-Xms{{ .Values.jvm.minHeapSize }} -Xmx{{ .Values.jvm.maxHeapSize }} {{ .Values.jvm.options}} -Dlogging.level.io.temporal={{ .Values.logging.level.temporal}} -Dorg.jooq.no-logo=true -Dorg.jooq.no-tips=true"
+  - name: JWT_VERIFYSIGNATURE
+    value: "{{ .Values.jwt.verifySignature }}"
+  - name: JWT_TOKENOPTIONAL
+    value: "{{ .Values.jwt.tokenOptional }}"
+  - name: JWT_SKIPJWKSERVERSSLVERIFICATION
+    value: "{{ .Values.jwt.skipJwkServerSslVerification }}"
+  - name: ICB_JWK_ENABLED
+    value: "{{ .Values.jwt.icbJwkEnabled }}"
+  - name: WARMUP_ENABLED
+    value: "{{ .Values.warmup.enabled }}"
+  - name: API_MAX_RETRY
+    value: "{{ .Values.api.maxretry }}"
+  - name: API_WAIT_BETWEEN_RETRIES
+    value: "{{ .Values.api.retryInterval }}"
+  - name: LOAN_ENABLED
+    value: "{{ .Values.loan.enabled }}"
+
+
+kafka:
+  listeners:
+    concurrency: 1
+    autoOffsetReset: earliest
+    groupId: borrow-eligibility-service
+    creditcard:
+      eligibility:
+        concurrency: 1
+      applicationRequest:
+        concurrency: 1
+    loan:
+      eligibility:
+        concurrency: 1
+      application:
+        concurrency: 1
+  recovery:
+    partitions: 3
+  triage:
+    partitions: 3
+  retry:
+    main:
+      maxAttemptsCount: 1
+      backoffInterval: 500ms
+    recovery:
+      maxAttemptsCount: 3
+      backoffInterval: 500ms
+
+
+istio:
+  excludeOutboundPorts: 26257,8133
+
+logging:
+  level:
+    temporal: INFO
+
+encryption:
+  incomeExpenseFields:
+    enabled: true
+    kmsKey: "arn:aws:kms:eu-west-1:279924677952:key/db2dbb13-e3e7-4a31-853d-6cf2aefc91c2"
+  cache:
+    # refresh cache every 10 mins
+    refreshIntervalMillis: 600000
+    # initial delay in ms after application start up - 0 secs(default)
+    initialDelayMillis: 0
+
+temporal:
+  target: borrow-temporal.105250-borrow-temporal.svc.cluster.local:8133
+  namespace: borrow
+  ssl_enabled: true
+  encryption:
+    enabled: false
+  workerFactory:
+    maxWorkflowThreadCount: 600 # sdk default value: 600, Maximum number of threads available for workflow execution across all workers created by the Factory. This includes cached workflows.
+    workflowCacheSize: 600 # workflow cache size used across all workers in this JVM instance
+  defaultWfWorker:
+    maxConcurrentWorkflowTaskPollers: 5 # sdk default value: 5
+    maxConcurrentWorkflowTaskExecutionSize: 200 # sdk default value: 200
+    deadlockDetectionTimeoutMs: 2000 # sdk default value: 1000 ms
+  defaultActWorker:
+    maxConcurrentActivityTaskPollers: 5 # sdk default value: 5
+    maxConcurrentActivityExecutionSize: 200 # sdk default value: 200
+    maxConcurrentLocalActivityExecutionSize: 200 # sdk default value: 200
+  defaultActOptions:
+    startToCloseTimeoutSecs: 60
+    retry:
+      initialIntervalMs: 100
+      maximumIntervalSecs: 10
+      backoffCoefficient: 2
+      maximumAttempts: 3
+
+zipkin:
+  enabled: true
+
+kafkaacl:
+  enabled: true
+
+db:
+  maxretry: 3
+  retryInterval: 10ms
+
+api:
+  maxretry: 3
+  retryInterval: 100ms
+
+task:
+  scheduling:
+    pool:
+      size: 5
+
+warmup:
+  enabled: true
+
+loan:
+  enabled: true
+
+jwt:
+  icbJwkEnabled: false
