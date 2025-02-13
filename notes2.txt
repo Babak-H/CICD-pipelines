@@ -1139,3 +1139,31 @@ https://github.com/omerbsezer/Fast-AWS/blob/main/HANDS-ON-010-MLOps-SageMaker-Gi
 https://github.com/omerbsezer/Fast-AWS/blob/main/HANDS-ON-009-GitlabServer-on-Premise-GitlabRunner-on-EC2.md
 
 https://github.com/omerbsezer/Fast-AWS/blob/main/HANDS-ON-006-EKS-ManagedNodes-Blueprint.md
+
+
+
+
+### HashiCorp Vault Grafana Metrics ###
+Health Status: group by (pod) (up{job="hault"})  => checks if the hault pods are up and working or not (currently only shows existing pods)
+
+Sealed Status: max(1 + vault_core_unsealed{}) => if the vault is unseal (unlocked) value is 2 otherwise 1 (sealed)
+
+Secrets: vault_secret_kv_count => count of key-value (KV) secrets stored in HashiCorp Vault visible in column Number of entries, rest is info about the mount path of secrets and the app that contains the secret,...
+
+Number of Operations in secret: vault_route_read_secret__count =>  the count of read operations on secrets through specific routes in Vault. In Vault, routes are used to define how requests are handled, and this metric would track the number of times secrets are read via these route
+
+Time of Operations in secret: avg(rate(vault_route_read_${mountpoint}__sum[1m]) / rate(vault_route_read_${mountpoint}__count[1m]) * 1000) => how long each reading or listing of secrets takes in this namespace, by average
+
+Heap objects used: avg(vault_runtime_heap_objects{} / vault_runtime_malloc_count{}) => (number of heap objects currently allocated in the memory of the Vault process. Heap objects are dynamically allocated memory blocks) / ( total number of memory allocation (malloc) operations performed by the Vault process),  average number of heap objects per memory allocation operation, lower than 0.2 means memory is being used efficiently 
+
+Allocated MB: avg(vault_runtime_alloc_bytes{}/1000000) =>  number of Megabytes of memory currently allocated and in use by the Vault process, we can view how the memory usage is on average for all 3 Vault pods
+
+Available Tokens: avg(vault_token_count) => number of active tokens in HashiCorp Vault. In Vault, tokens are used for authentication and authorization. They are issued to clients and can have various properties such as time-to-live (TTL), policies, and renewable status
+
+Pending Tokens: avg(vault_token_create_count - vault_token_store_count) => count of token creation operations in HashiCorp Vault - count of tokens currently stored in Vault , so you will get how many tokens are created but not saved in Vault
+
+Request Handling: sum(vault_core_handle_request) by (quantile) => which quantile (p 0.5 , p 0.9 , p 0.99) handles how many requests
+
+Log Requests: vault_audit_log_request_count, vault_audit_log_response_count => count of audit log requests in Vault. Vault's audit logging feature records all requests and responses to the Vault server, providing a detailed log of all operations for security and compliance purposes. This metric would track the number of audit log entries created
+
+Log Request/Response Failures: vault_audit_log_request_failure, vault_audit_log_response_failure => count of failed attempts to log request/responses in the audit log of Vault. Vault's audit logging feature records all requests and responses to the Vault server, and this metric would track the number of times an attempt to log a request/response has failed. Failures could occur due to various reasons such as misconfigurations, permission issues, or storage problems.
