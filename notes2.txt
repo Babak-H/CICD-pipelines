@@ -818,11 +818,7 @@ kubectl cp ./script.sh  -n 105250-vault-operators vault-operator-tqdcf:/tmp/ -c 
 kubectl exec -it -n 105250-core-hault hault-restore-0 -c cockroach-cert-copy -- sh
 
 
-
 kubectl exec -it cockroach-client-0 -n 105250-cockroach-sql-client -- ./cockroach sql --certs-dir=cockroach-certs-copy --user=cockroach_client --url=postgresql://cockroach-public
-
-
-
 
 
 Created by Ruben Verboon, last modified by Alex Radoi on Sep 13, 2021
@@ -876,22 +872,6 @@ spring:
 
 
 
-
-
-
-https://www.cockroachlabs.com/docs/v24.1/certificate-based-authentication-using-the-x509-subject-field.html#step-3-set-the-subject-role-option-using-create-role-or-alter-role-to-match-your-certificates
-
-
-https://stackoverflow.com/questions/43356447/can-cockroachdb-save-the-results-of-a-query-to-a-csv-file
-
-https://developer.hashicorp.com/vault/docs/auth/kubernetes
-
-
-
-https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/USER_UpgradeDBInstance.PostgreSQL.html#USER_UpgradeDBInstance.PostgreSQL.MajorVersion
-
-
-# prometheus configuration file : https://prometheus.dn-dcore-vault.dynamo.dev.eu-west-1.aws.jpmchase.net/config 
 # this is where scraping addresses and alert manager specifictions are defined
 
 global:
@@ -1017,49 +997,14 @@ runbook_url: https://runbooks.prometheus-operator.dev/runbooks/prometheus/promet
 summary: Prometheus is dropping samples with duplicate timestamps.
 
 
-
-
 # https://prometheus.dn-dcore-vault.dynamo.dev.eu-west-1.aws.jpmchase.net/service-discovery
 # address of all the endpoints that we are scraping to get the metrics
-
-
-
-
-https://sre.google/sre-book/service-level-objectives/
-https://sre.google/workbook/implementing-slos/
-https://sre.google/sre-book/monitoring-distributed-systems/#xref_monitoring_golden-signals
-https://sre.google/sre-book/managing-critical-state/
-https://sre.google/sre-book/load-balancing-datacenter/
-https://sre.google/sre-book/eliminating-toil/
-https://sre.google/sre-book/practical-alerting/
-https://sre.google/sre-book/production-environment/
-https://sre.google/workbook/alerting-on-slos/
-
-
 
 
 Kafka-console-consumer --bootstrap-server $BOOTSTRAP_SERVER:9092 --offset 1 --partition 1 --max-messages 1 --value-deserializer "org.apache.kafka.common.serialization.BytesDeserializer" --consumer.config /home/appuser/conect.properties --topic $topic_name
 
 
-https://docs.aws.amazon.com/privateca/latest/userguide/PcaKubernetes.html
-https://github.com/cert-manager/aws-privateca-issuer
-https://docs.aws.amazon.com/privateca/latest/userguide/PcaWelcome.html
-https://docs.aws.amazon.com/privateca/latest/userguide/ca-lifecycle.html
-
-
-
-https://kyverno.io/docs/writing-policies/mutate/
-https://github.com/kyverno/kyverno/wiki/Mutating-Webhook
-https://medium.com/@rodrigofk/automating-kubernetes-workflows-with-kyvernos-mutating-webhooks-ae3f0a81d4d7
-https://medium.com/miro-engineering/optimizing-kubernetes-scalability-and-cost-efficiency-with-karpenter-356153fcf546
-https://medium.com/itnext/karpenter-open-source-high-performance-kubernetes-cluster-autoscaler-d56e3ab06aae
-https://cert-manager.io/docs/concepts/webhook/
-https://cert-manager.io/v1.5-docs/concepts/webhook/
-https://github.com/cert-manager/webhook-example
-
 Secret-store csi driver
-
-
 
 ## k8s_aliases.sh
 
@@ -1126,23 +1071,6 @@ function knodes() {
 }
 
 
-
-
-
-https://ohmyz.sh/
-https://github.com/ohmyzsh/ohmyzsh
-
-
-https://github.com/omerbsezer/Fast-AWS/blob/main/HANDS-ON-010-MLOps-SageMaker-GitHub-Codepipeline-CodeBuild-CodeDeploy.md
-
-
-https://github.com/omerbsezer/Fast-AWS/blob/main/HANDS-ON-009-GitlabServer-on-Premise-GitlabRunner-on-EC2.md
-
-https://github.com/omerbsezer/Fast-AWS/blob/main/HANDS-ON-006-EKS-ManagedNodes-Blueprint.md
-
-
-
-
 ### HashiCorp Vault Grafana Metrics ###
 Health Status: group by (pod) (up{job="hault"})  => checks if the hault pods are up and working or not (currently only shows existing pods)
 
@@ -1167,8 +1095,6 @@ Request Handling: sum(vault_core_handle_request) by (quantile) => which quantile
 Log Requests: vault_audit_log_request_count, vault_audit_log_response_count => count of audit log requests in Vault. Vault's audit logging feature records all requests and responses to the Vault server, providing a detailed log of all operations for security and compliance purposes. This metric would track the number of audit log entries created
 
 Log Request/Response Failures: vault_audit_log_request_failure, vault_audit_log_response_failure => count of failed attempts to log request/responses in the audit log of Vault. Vault's audit logging feature records all requests and responses to the Vault server, and this metric would track the number of times an attempt to log a request/response has failed. Failures could occur due to various reasons such as misconfigurations, permission issues, or storage problems.
-
-
 
 
 ### Core-Hault-Operator migration from 0.11.15 to 1.4.6 ###
@@ -1197,10 +1123,3 @@ kubectl get pod -n 105250-core-vault
 Known issues:
 
 pipeline might throw errors due to issues downloading the AWS or Kubernetes provider. re-running the pipeline again will fix these issues.
-
-
-
-
-
-
-
