@@ -534,145 +534,15 @@ k logs deploy/otel-collector -n 105250-core-vault
 k get po -n 105250-core-vault | grep otel
 k get cm otel-gateway-conf-fdg7dt2f9d-namespaced-observability-c547c3d65f -n 105250-core-vault -o yaml
 
-
-**********************
-Best Practices for Secret Rotation
-Automate Rotation: Use tools and scripts to automate the rotation process to reduce human error and ensure consistency.
-Use a Secret Management System: Tools like HashiCorp Vault, AWS Secrets Manager, and Azure Key Vault can help manage and rotate secrets securely.
-Set Rotation Policies: Define policies that specify how often secrets should be rotated (e.g., every 30, 60, or 90 days).
-Monitor and Audit: Keep logs of secret rotations and monitor for any unauthorized access attempts.
-Notify Stakeholders: Ensure that all relevant stakeholders are informed about the rotation schedule and any changes to secrets.
-Test Rotations: Regularly test the rotation process to ensure that it works as expected and does not disrupt operations.
-
-Challenges and Considerations
-Downtime: Ensure that the rotation process does not cause downtime or disrupt services.
-Backward Compatibility: Make sure that all systems and applications that rely on the secret are updated to use the new secret.
-Security: Ensure that the rotation process itself is secure and does not expose the new secrets.
-
-Example Tools for Secret Rotation
-HashiCorp Vault: Provides dynamic secrets, automatic rotation, and secure storage.
-AWS Secrets Manager: Automates the rotation of secrets and integrates with AWS services.
-Azure Key Vault: Manages and rotates secrets, keys, and certificates in Azure.
-
-In summary, password or secret rotation is a crucial security practice that helps protect systems and data from unauthorized access. By regularly changing credentials and using automated tools, organizations can significantly reduce the risk of security breaches.
-
-
-**********************
-what are gRPC and RPC connections?
-
-RPC (Remote Procedure Call) and gRPC (gRPC Remote Procedure Call) are both protocols used for communication between different systems, typically over a network. They allow a program to execute a procedure (subroutine) on a different address space (commonly on another physical machine) as if it were a local procedure call.
-
-RPC (Remote Procedure Call)
-
-RPC is a protocol that one program can use to request a service from a program located on another computer in a network. It abstracts the details of the network communication, making it easier for developers to write distributed applications. The key features of RPC include:
-
-Transparency: The client calls a remote procedure as if it were a local one, without needing to handle the details of the network communication.
-Simplicity: It simplifies the process of writing distributed applications by hiding the complexity of the network communication.
-Language Agnostic: RPC can be implemented in various programming languages.
-However, traditional RPC has some limitations, such as lack of support for modern data formats and protocols, and it can be less efficient in terms of performance and scalability.
-
-gRPC (gRPC Remote Procedure Call)
-
-gRPC is a modern, open-source RPC framework developed by Google. It uses HTTP/2 for transport, Protocol Buffers (protobuf) as the interface description language, and provides features such as authentication, load balancing, and more. Key features of gRPC include:
-
-HTTP/2: gRPC uses HTTP/2, which provides several advantages over HTTP/1.1, including multiplexing, flow control, header compression, and more efficient use of network resources.
-
-Protocol Buffers: gRPC uses Protocol Buffers (protobuf) for serializing structured data, which is more efficient and faster than traditional text-based formats like JSON or XML.
-
-Cross-Platform: gRPC supports multiple programming languages, making it easier to develop cross-platform applications.
-
-Streaming: gRPC supports streaming requests and responses, allowing for more complex communication patterns like bidirectional streaming.
-
-Performance: gRPC is designed for high performance, with low latency and high throughput.
-
-Comparison
-Transport Protocol: RPC can use various transport protocols (e.g., TCP, HTTP), while gRPC specifically uses HTTP/2.
-Data Serialization: Traditional RPC might use different serialization formats (e.g., JSON, XML), whereas gRPC uses Protocol Buffers.
-Performance: gRPC generally offers better performance due to its use of HTTP/2 and Protocol Buffers.
-Features: gRPC provides additional features like streaming, built-in authentication, and load balancing, which are not typically part of traditional RPC implementations.
-
-In summary, while both RPC and gRPC serve the same fundamental purpose of enabling remote procedure calls, gRPC offers a more modern, efficient, and feature-rich approach, making it a popular choice for building scalable and high-performance distributed systems.
-
-
 **********************
 
-In the context of Site Reliability Engineering (SRE) and application monitoring, throughput refers to the amount of work or data processed by a system in a given period of time. It is a key performance metric that helps assess the efficiency and capacity of a system. Throughput can be measured in various units, such as requests per second, transactions per minute, or data processed per hour, depending on the nature of the application.
 
-Importance of Throughput:
-Performance Evaluation: Throughput helps in evaluating the performance of an application or service. Higher throughput generally indicates better performance and capacity to handle more load.
 
-Capacity Planning: By understanding the throughput, teams can plan for scaling resources to meet demand, ensuring that the system can handle peak loads without degradation in performance.
 
-Bottleneck Identification: Monitoring throughput can help identify bottlenecks in the system. If throughput is lower than expected, it may indicate issues such as resource constraints or inefficient code.
-
-Service Level Objectives (SLOs): Throughput is often a component of SLOs, which are used to define the expected level of service reliability and performance.
-
-User Experience: High throughput can contribute to a better user experience by ensuring that requests are processed quickly and efficiently.
 
 In SRE, maintaining optimal throughput is crucial for ensuring that systems are reliable, scalable, and performant. Monitoring tools are often used to track throughput and other related metrics to provide insights into system health and performance.
 
 *************
-
-explain to me how DLQ monitoing works?
-
-DLQ (Dead Letter Queue) monitoring is a process used to track and manage messages that cannot be processed successfully by a message queue system. Here's how it generally works:
-
-Dead Letter Queue (DLQ) Setup:
-
-A DLQ is a special queue where messages that fail to be processed are sent. This can happen due to various reasons such as message format errors, processing logic failures, or timeouts.
-Message Routing:
-
-When a message cannot be processed by the main queue, it is automatically routed to the DLQ. This ensures that problematic messages do not block the processing of other messages.
-Monitoring Tools:
-
-Monitoring tools or dashboards are set up to keep track of the DLQ. These tools can provide insights into the number of messages in the DLQ, the reasons for failure, and the time messages have been in the queue.
-Alerting:
-
-Alerts can be configured to notify administrators or developers when the number of messages in the DLQ exceeds a certain threshold. This helps in quickly identifying and addressing issues.
-Analysis and Troubleshooting:
-
-Messages in the DLQ are analyzed to determine the cause of failure. This can involve checking message content, reviewing logs, and debugging the processing logic.
-Reprocessing:
-
-Once the issue is identified and resolved, messages can be reprocessed. This might involve moving them back to the main queue or directly processing them from the DLQ.
-Reporting:
-
-Regular reports can be generated to provide insights into the frequency and types of errors occurring, helping to improve the overall system reliability.
-By effectively monitoring the DLQ, organizations can ensure that message processing systems are robust, reliable, and capable of handling errors gracefully.
-
-
-How can we monitor Kafka topics DLQs
-
-Monitoring Kafka Dead Letter Queues (DLQs) involves several steps and tools to ensure that messages that cannot be processed are effectively managed. Here's how you can do it:
-
-Set Up DLQs:
-
-Create separate Kafka topics designated as DLQs for each main topic that requires error handling.
-Configure Producers/Consumers:
-
-Ensure that your Kafka consumers are configured to send failed messages to the appropriate DLQ. This can be done by implementing error handling logic in your consumer applications.
-Use Monitoring Tools:
-
-Utilize Kafka monitoring tools like Confluent Control Center, Prometheus, or Grafana to track the status of your DLQs. These tools can provide metrics such as message count, consumer lag, and throughput.
-Set Up Alerts:
-
-Configure alerts to notify you when the number of messages in a DLQ exceeds a certain threshold. This can be done using monitoring tools or custom scripts.
-Log Analysis:
-
-Implement logging in your consumer applications to capture details about why messages are being sent to the DLQ. This can help in diagnosing and resolving issues.
-Regular Audits:
-
-Periodically review the messages in the DLQs to understand common failure patterns and address underlying issues.
-Automated Reprocessing:
-
-Develop scripts or applications to automatically reprocess messages from the DLQ once issues are resolved. This can be done by consuming messages from the DLQ and attempting to process them again.
-Dashboard Creation:
-
-Create dashboards to visualize DLQ metrics, making it easier to spot trends and anomalies.
-By implementing these strategies, you can effectively monitor and manage Kafka DLQs, ensuring that your message processing system remains robust and reliable.
-
-*************
-
 exec inside a deployment (chooses a random pod from the deployment):
   kubectl exec -it deploy/core-kafka-toolkit -n 105250-kafka -- bash
 
@@ -683,32 +553,7 @@ The metric "kafka_server_brokertopicmetrics_fetchfromfollowerfetchrequestspersec
 
 ALERTS{alertname="NewMessagesInMigratedPostingsBridgeDLQ", alertstate="firing", topic="vault.api.v1.postings.posting_instruction_batch.created.migrated_postings_bridge.dlq"}
 
-
 *****************
-
-*** Access Vault API via Postman ***
-
-1. import the "Core Api.postman_collection 1.json" collection file into postman (go to collections, click import and then import it there)
-2. find the endpoint that you want to access there, for example "/v1/account-updates"
-3. inside the folder, click the operation you want to do, Get, Post,...
-4. in the request page, click on 'Authorization', click 'API KEY' from drop down, then choose 'Header' from 'Add to' drop down
-5. go to 'Header' section, there should bey 'Key' section, write "X-Auth-Token" instead of default "Key"
-6. go to 'tm-ops' for respective enviornment, for example: https://tm-ops.dynamo.uat.eu-west-1.aws.jpmchase.net/customers/id for ECORE
-7. go to 'Organization Admins' => 'Service Accounts', find the SA you need.
-8. if the account is 'frozen', click 'Action', click 'change status' to 'Active', make change, click 'Action' again, then 'Refresh Token' and copy it
-9. in Postman for the value of the key 'X-Auth-Token' enter the copied value.
-10. in the link address, edit it to reflect the URL variables you want to use
-
-* base URL: https://core-api.dn-ncore-vault.dynamo.test.eu-west-1.aws.jpmchase.net/
-https://core-api.dn-icore-vault.dynamo.eng.eu-west-1.aws.jpmchase.net/
-
-
-to find a smart contract related to an account id:
-go to accounts section and search and find the account, then : Click -> Account -> Revolving Line Account->Product version there you will see all code about contract
-
-*****************
-
-Could you also enable debug logs for the vault-ledger-balances-distribution-processor deployment and leave it to run for a period of time (approx 20 mins) and then collect the logs for this service? (You can disable the debug logs after you’ve collected the logs).
 
 Enabling debug logs is done by appending --verbosity=debug to the command of the main container in the deployment k8s yaml:
        ■ kubectl edit deployment vault-ledger-balances-distribution-processor
@@ -718,36 +563,6 @@ Enabling debug logs is done by appending --verbosity=debug to the command of the
 Let us know how you get on and if you have any questions regarding the above.
 
 *****************
-
-** postgres table vaccuming **
-
-In PostgreSQL, table vacuuming is a maintenance operation that helps manage storage and improve database performance. The process involves cleaning up dead tuples (obsolete rows) that result from updates and deletes.
-
-1. MVCC (Multi-Version Concurrency Control): PostgreSQL uses MVCC to handle concurrent transactions. When a row is updated or deleted, the old version of the row is not immediately removed. Instead, a new version of the row is created, and the old version is marked as obsolete or "dead." This allows other transactions to continue accessing the old version until they are completed.
-2. Dead Tuples: Over time, as updates and deletes occur, the number of dead tuples in a table can increase. These dead tuples consume storage space and can lead to inefficient use of resources, as they still need to be scanned during certain operations.
-3. Vacuuming: The VACUUM command is used to reclaim storage occupied by dead tuples. It marks the space occupied by these tuples as available for future use, effectively cleaning up the table. Vacuuming also helps update the visibility map, which can improve the efficiency of index-only scans.
-
-Regular vacuuming is essential for maintaining the health and performance of a PostgreSQL database, especially in environments with frequent updates and deletes.
-
-# basic vaccum
-VACUUM;
-
-# Vacuum a Specific Table
-VACUUM my_table;
-
-# vaccum with analyze => ANALYZE option updates the statistics used by the PostgreSQL query planner, which can help improve query performance. This command vacuums and analyzes a specific table
-VACUUM ANALYZE my_table;
-
-# vaccum full => The FULL option reclaims more space by compacting the table, but it requires an exclusive lock on the table. Use this option with caution, as it can impact performance
-VACUUM FULL my_table;
-
-
-*** How to access DINFRC ***
-
-arn:aws:iam::987705244904:role/105250-EMEA-DINFRC-DEVOPSENGINEER
-aws eks update-kubeconfig --name dn-dinfrc-vault --region eu-west-1
-
-
 
 #!/bin/bash
 
@@ -766,8 +581,6 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-kubectl create serviceaccount $SERVICE_ACCOUNT_NAME --namespace $NAMESPACE
-kubectl create rolebinding sa-role-binding --role $ROLE --serviceaccount $NAMESPACE:$SERVICE_ACCOUNT_NAME --namespace $NAMESPACE
 kubectl label serviceaccount $SERVICE_ACCOUNT_NAME -n $NAMESPACE icb.jpmorgan.com/squad=ICB_Ledgers app.kubernetes.io/name=hashicorp-vault
 kubectl annotate serviceaccount $SERVICE_ACCOUNT_NAME -n $NAMESPACE eks.amazonaws.com/role-arn=arn:aws:iam::279924677952:role/105250-0000ie-dcore-core-hault
 
@@ -780,28 +593,6 @@ else
     exit 1
 fi
 
-
-Hault pipeline in Harness:
-1. run hault_k8s to create the CRD
-2. run k8s_hault_operator to create the operator that executes the CRD
-
-
-Created by Chang Ge, last modified by Gad Abdelrahman on Apr 03, 2024
-Encryption at rest
-Definition
-Requirements
-Control aspects
-Implementation
-Reference
-Encryption in transit
-Definition
-Requirements
-Control aspects
-Implementation
-Reference
-Encryption at rest
-Definition
-All data (on DB instances, backups, snapshots etc) must be encrypted at rest.
 
 Requirements
 When an Aurora cluster is created, encryption must be enabled whilst using a customer-managed key (CMK).
@@ -822,17 +613,8 @@ No need to configure special key policy on top of the default one
 Control aspects
 TCP-1.05: Data Protection
 
-TCS-011: Data at Rest Protection
-TCS-011-001: Confidentiality Protection at Rest 
-CP-2802 Application Data at Rest Encryption
-TCS-013: Cryptographic Mechanisms
-TCS-013-005: Manage lifecycle of Master Keys, Key Encryption Keys, and Data Encryption Keys 
-CP-2880 Cryptographic Key Lifecycle Management
-Implementation
-This is provided by CPE Aurora TF module which allows the creation of a CMK which fits the previously mentioned requirements. 
 
-Reference
-https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/Overview.Encryption.html
+
 
 Encryption in transit
 Definition
@@ -887,19 +669,6 @@ url: jdbc:aws-wrapper:postgresql://example.eu-west-1.rds.amazonaws.com:5432/db?s
 global-bundle.pem: is provided by aurora-ssl-certificates
 
 
-
-Reference
-https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/Overview.Encryption.html
-
-https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/AuroraPostgreSQL.Security.html
-
-
-
-
-The steps described below will only work for projects using "buildAndDeployPython"
-
-
-
 In the Jenkinsfile:
 The "isRunSonarQube" parameter has now been updated to be true by default (no action needed)
 The "useCoverageTool" parameter has now been updated to be true by default and generates the coverage report to be used by SonarQube (no action needed)
@@ -915,8 +684,6 @@ Previously, buildAndDeployPython used a default value for "coverageToolSourceDir
 
 
 
-Core-Hault-Operator migration from 0.11.15 to 1.4.6
-Created by Babak Habibnejad Gohardani on Jun 25, 2024
 
 
 A. Spinnaker pipeline spinnaker-for-core-hault
@@ -970,33 +737,6 @@ Request Handling: sum(vault_core_handle_request) by (quantile) => which quantile
 Log Requests: vault_audit_log_request_count, vault_audit_log_response_count => count of audit log requests in Vault. Vault's audit logging feature records all requests and responses to the Vault server, providing a detailed log of all operations for security and compliance purposes. This metric would track the number of audit log entries created
 
 Log Request/Response Failures: vault_audit_log_request_failure, vault_audit_log_response_failure => count of failed attempts to log request/responses in the audit log of Vault. Vault's audit logging feature records all requests and responses to the Vault server, and this metric would track the number of times an attempt to log a request/response has failed. Failures could occur due to various reasons such as misconfigurations, permission issues, or storage problems.
-
-
-
-What is SonarQube
-Created by Theodora Litean-Tataru on Sep 20, 2023
-Introduction
-What is SonarQube?
-SonarQube is ICB's continuous code inspection solution for identifying and managing code smells, bugs, and security vulnerabilities. SonarQube evaluates code against pre-defined technology-specific quality profiles. The various measures produced can be used to create Quality Gates which helps answer part of the question: can you ship your code to the customer? It can integrate with a CI engine (e.g. Jenkins) to enable continuous/time controlled scans, and with SCM tools (e.g. Bitbucket) to enable branch level and pull request level quality metrics.
-
-Why SonarQube?
-Improve code quality - the quality of an application is directly linked to the code. Consequently, when the code of an application is improved, the application itself is improved
-Grow developer skills  - by providing developers with code feedback and identifying errors, SonarQube enables them to make informed decisions and develop better code in the future. In addition to demonstrating code issues, the platform also assists developers in comprehending the root cause of the issue and how to prevent similar occurrences in the future
-Reduce risk  - organizations may be vulnerable to a security breach due to the presence of bugs and vulnerabilities in their code. By actively scanning code at the time of writing, SonarQuube assists organizations in mitigating their digital risk
-Scale With Ease - SonarQube was built to scale. As of yet, there has been no limit to this tool’s scalability. Whether you have one or one thousand applications with millions of lines of code, SonarQube performs at a high level and provides in-depth analysis
-
-More about SonarQube in ICB
-
-
-Dictionary
-Code Smell - A maintainability-related issue in the code. Leaving it as-is means that at best maintainers will have a harder time than they should making changes to the code. At worst, they'll be so confused by the state of the code that they'll introduce additional errors as they make changes.
-Bug - An issue that represents something wrong in the code. If this has not broken yet, it will, and probably at the worst possible moment. This needs to be fixed. Yesterday.
-Security Vulnerabilities  - a security-related issue which represents a backdoor for attackers.
-Quality Gate - is the best way to enforce a quality policy in your organization. It's there to answer ONE question: can I deliver my project to production today or not? The answer can be based on predefined conditions on measures related to overall or net new code.
-CI/CD  - the use of Continuous Integration/Continuous Deployment (CI/CD) tools enables a team to automate their development, deployment and testing processes. Some CI/CD tools specialize in the integration process, while others focus on continuous testing or other related functions.
-SCM - tracks modifications to a source code repository
-Branch - represents an independent line of development. A branch is a pointer to one specific commit, while a commit is a snapshot of your repository at a specific point in time
-Pull request - is a mechanism for a developer to notify team members that they have completed a feature. It lets engineers tell others about changes they've pushed to a branch in a  code repository
 
 
 DLQs
@@ -1575,63 +1315,6 @@ webhooks:
     sideEffects: NoneOnDryRun
 
 
-burn rate: https://docs.datadoghq.com/service_management/service_level_objectives/burn_rate/
-
-
-Created by Gary Barter, last modified by Jasmin Taffurelli on Jan 23, 2023
-The intention of this page is to clarify how all roles will be interviewed moving forwards, so that we get greater consistency and efficiency on the hiring process.
-
-Please see the interviewer panel: Pool Roster (Core Engineering - Interview Rota). Whilst this is being built, please see current pipeline for 2023: Cloud Engineering 2023 - Role One-Pager
-
-Please see the Cloud Engineering live pipeline Tracker page for all regions: TBC
-
-Job Specification
-For each job a specific specification will be created and referenced in all correspondence.
-
-It should include all the standard details including the location and grade guide
-
-Currently we are ensuring that all roles for Engineering roles for Core Engineering carry a bias towards software development in the candidates background and this should be specified in the job spec.
-
-The job specs can be found here: TBC
-
-Interview approach
-There will be three main rounds of interview for the Cloud Engineering roles: Interview Panel
-
-#1 CV screen (Mandatory)- 30 minutes with an engineer (Mark/Petrut/Kyle)
-Initial review of all submitted CVs by recruiter.
-When screening, we want to ensure that the candidates have some experience/background as a software engineer, with an OOO language (Java, Golang, Python,, C#, PHP). The engineer also needs to have solid experience working on the infrastructure side of things ideally, with Cloud (AWS greatly preferred but open to GCP, Azure. Another important element is the Kubernetes experience- this is something that the team home in on during the technical interview. An engineer should have active experience with it, as opposed to it just being part of their company tech stack.
-The engineer will look to find out a bit about the breadth of experience the candidate has, from the challenges they have solved from an infra POV to their  current remit and toolkit. It will also be a chance for the candidate to find out a bit about the team/tech stack/role).
-After screening, the engineer will give you a decision on whether the candidate goes through to the final two interviews or does not. They will progress the candidate to the next round or provide feedback as to why the candidate is declined. 
-#2 Technical interview 1: Software engineering/Infrastructure (Mandatory)- 60 minutes with ONE engineer from Software Engineering pool and ONE engineer from Cloud Engineering pool.
-The aim of this technical interview is to assess an engineer's problem solving coding ability (in their strongest OOO language) and assess their ability to think like a software engineer. It is also to assess infrastructure knowledge and experience, especially focusing on our core tools (EG Toolchain components, CI/CD and SDLC concepts, AWS services, EKS/Kubernetes, Infra as code and Terraform, SRE & Monitoring etc).
-The 1st part- 30 mins- software engineering: They will be provided with a problem to write a solution for- the team will walk them through the problem and add additional considerations for the engineer to address. Ideally, the candidate would do this in Java/Python/Go.
-The 2nd part- 30 mins- Infrastructure knowledge and experience: The team will look to find out about their Cloud experience/ impact they have had/infrastructure/team business issues that they have solved in their previous/current role. The team do need Kubernetes experts so the candidate will have needed to work with Kubernetes directly, if they are to be considered for a VP role.
-The technical also provides an opportunity for candidate to learn more about the role and what it means to work  in Dynamo.
-Emphasis is placed on those skills referenced on the candidate CV
-Though, any question relevant to the role may be asked in order to understand candidate capability
-Where the role has a specific target area then more weight will be given to this area
-For example when seeking a candidate for a Cockroach role, more weight will be given to this subject
-This allows flexibility to select questions appropriate to the role and the candidate experience, as Core Engineering is a broad topic area and not many will be expert in all areas
-#3 Final zoom interview (Mandatory)- 30 minutes
-The aim of this final interview is for a final verification of suitability prior to making a formal job offer
-The content of the interview may include:
-Technical content
-Banking or application services
-Security and controls
-Cultural suitability discussions
-Explanations around job role and expectations
-Deeper dive into any areas identified in previous rounds for follow up
-Final questions from candidate
-Any other area TBD
-The intention is that a final decision and offer can be made off the back of this conversation
-Typically this interview ill include one Senior VP (Petrut/Kyle) OR Mark Hale from Core Engineering, normally those who were not involved in the first round.
-
-
-After the 2nd and 3rd interview takes place, the team will do a wash up (organised by them) and provide the FULL feedback in one document.
-
-
-
-
 So you want to create or update a Cockroach database
 CRDs
 Cockroach Database
@@ -1771,36 +1454,9 @@ To add post implementation
 
 
 
-elasticsearch logs export:
-Export your search results in CSV
-Export from OpenSearch requires 3 steps
-1) perform search result and select required fields (by default all fields will be exported)
-2) save the search result
-3) click on "Reporting" -> "Generate CSV"
-
-There is a limit of 5000 entries per export, adjust the time range accordingly:
 
 
 
-
-Created by John Jones, last modified by Jerome Cortel on Nov 01, 2024
-Table of Contents
-I. Introduction
-
-II. Main Details Section
-
-III. Planning Section
-
-IV. Other useful details
-
-V. Key Takeaways
-
-VI. References
-
-VII. Document Information and Version Control
-
-I. Introduction
-Objective
 
 This document details the Minimum Acceptance Criteria to ensure adequate and detailed documentation is included in ServiceNow Change Records.
 
@@ -1893,9 +1549,6 @@ Why? – Firmwide guidance is to avoid dynamic links that are not accessible to 
 Use Jet Evidence Store for evidence as applicable (attach evidence to the Change Record)
 Ensure you are thorough in your pre-implementation, implementation, fall-back strategy and post validation test plans. (use tool tip links in SNOW if in doubt)
 Refer to the Change Quality Review Playbook for examples of good vs bad changes
-
-
-Raft storage: https://developer.hashicorp.com/vault/docs/configuration/storage/raft
 
 
 
@@ -2199,11 +1852,3 @@ fi
 cat $EXPORTED_RESULT_FAILURES | jq -R | jq -s | uniq \
   | xargs -I '{}' -n1  curl -k "${REPOSTING_URL}:republish" -X POST -H "X-Auth-Token: ${REPOSTING_TOKEN}" -H "Content-Type: Application/Json" \
     --data-binary "{\"account_id\": \"{}\",\"republish_type\": \"REPUBLISH_TYPE_REPUBLISH_BLOCKED_FAILURES\"}"
-
-
-
-
-https://www.reddit.com/r/cscareerquestions/comments/1fmcdz3/6_month_update_buddy_of_mine_completely_lied_in/
-https://www.reddit.com/r/cscareerquestions/comments/1bq2gu7/i_am_a_former_metagoogle_recruiter_i_think_lot_of/
-https://www.reddit.com/r/cscareerquestions/comments/1g9l83u/psa_please_do_not_cheat/
-https://www.reddit.com/r/devops/comments/hne5q0/getting_into_devops_as_a_b:eginner_is_tricky_my_50/
