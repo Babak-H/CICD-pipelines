@@ -176,12 +176,6 @@ creating RDS global cluster:
 
 4. RDS instance, secondary (part of the cluster)
 
-
-RDS SSL: https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/UsingWithRDS.SSL.html
-IAM Permissions boundaries: https://docs.aws.amazon.com/IAM/latest/UserGuide/access_policies_boundaries.html
-Aurora serverless compatibility: https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/Concepts.Aurora_Fea_Regions_DB-eng.Feature.ServerlessV2.html
-
-
 creating Cloudwatch logs:
 1. create Cloudwatch logs group:
 - name
@@ -442,4 +436,3 @@ SCP prevent any vpc that doesnt have internet access from getting it
     }
   ]
 }
-
