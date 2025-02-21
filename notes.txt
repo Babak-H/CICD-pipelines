@@ -2,35 +2,7 @@ babak.habibnejadgohardani@jpmorgan.com
 D645581
 MoeMoe1990!1369!
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 tail /var/log/messages
-
-
 
 Switch to remote branch on local
 > git branch -v -a
