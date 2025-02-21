@@ -2,90 +2,35 @@ babak.habibnejadgohardani@jpmorgan.com
 D645581
 MoeMoe1990!1369!
 
-zoom page: https://jpmchase.zoom.us/j/6913031056
-
-SID = Standard ID
-FID = Federated ID
-EVP = Enterprise Password Vault
-TM = thought machine Vault
-Vault = thought machine Vault
-SA = Service Account
-
-TM Vault
-D645581
 
 
-TM portal login
-username: babak.habibnejadgohardani
-pass: MoeMoe1990!!
 
 
-*** INCIDENTS SHOULD BE RESOLVED AFTER YOU DO THEM ***
-*** ChangeRequest should be set to implement => review after you do them ***
-*** add start and end of each change at PUBLIC:ICB Ledger:General group ***
-
-**** EVERYDAY ****** 
-
-git fetch origin
-git rebase origin/master
-
-**** EVERYDAY ****** ^^^^^^
 
 
-* core-hault : it means hashicorp vault, to not be confused with our vault
-
-* breakglass is a bastionhost instance EC2 on AWS that can access and edit the production instances.
-
-- We work on SRE-core (related to ledger of TM value, rewards and transaction systems), We maintain, upgrade and extend TM vault ledger. 
-- Users go through Active Directory when they login to the system and then go to the servers on AWS
-- Vault is run on AWS server through EKS cluster, 400 pods, 10 nodes, around 40 on each node
-
-SealID = the id we use in Kubernetes namespaces to specify that this resource belongs to specific group (our project) and not a third-party tool (like gremlin)
-
-MIN = in-bound mediation account
-MOUT = out-bound mediation account
-LOB = Line Of Business
-
-Production Freeze = no changes to be applied to production environment during this period
 
 
-Go links
-go/awsconsole : sso link for aws console
-go/snow : service now
-go/dlogs, go/ilogs, go/elogs, go/nlogs ,go/plogs : link for elastic/kibana environments
-go/myattendence : WFH related stuff
-go/concur : get money from home equipment
-go/publiccloudsre  :
-go/snow : for change management
-go/concur : for getting expanses
-go/kafkadocs : Kafka documentation
-go/w2w : time management
-go/psp-bg : breakglass password access
-go/icbharness : harness cicd access
-
-ctrl+A => go to start of line in Terminal
-ctrl+E => go to end of line in Terminal
 
 
-clusters in Dcore/Icore/Ecore/Ncore:
-dn-dcore
-dn-dcore-data
-dn-dcore-vault (this is our main cluster)
 
-clusters in nSHS:
-dn-nshs
 
-clusters in Pcore:
-dn-pcore
-dn-pcore-data
-dn-pcore-vault
 
-idempotent = Idempotence is the property of certain operations in mathematics and computer science whereby they can be applied multiple times without changing the result beyond the initial application. => doing something several times or only once won't change the results.
+
+
+
+
+
+
+
+
+
+
+
+
 
 tail /var/log/messages
 
-JWT = Json Web Token
-BAU = Business As Usual
+
 
 Switch to remote branch on local
 > git branch -v -a
@@ -104,21 +49,6 @@ How to access Kubernetes cluster from Terminal:
 describe cluster:
 aws eks --region us-east-1 describe-cluster --name <CLUSTER_NAME> --query cluster.status
 
-*** Access Database Postgres ***
-
-D,I,E
-1. go to RDS and find the db, go to config and find the link to secret manager
-2. go to secret manager and get user/pass
-3. go to PGAdmin from core-vault bitbucket page and create new server and connect via user/pass
-4. in ecore server name is like this: tm-vault-green-cluster.cluster-ctprhfb1fjir.eu-west-1.rds.amazonaws.com
-
-N,P
-1. connect to the server via 'aws pcl -s'
-2. find the 'vault-tools-XXXX' on the '105250-vault-operators' ns
-3. exec into it and go to /scripts folder
-4. run "./connect-to-db.sh" for read queries and "./connect-to-db.sh -w" for write queries. the password will be retrieved automatically
-
-
 Kubernetes Drain:
 How to drain an Kubernetes node: You can use "kubectl drain" to safely evict all of your pods from a node before you perform maintenance on the node (e.g. kernel upgrade, hardware maintenance, etc.). Safe evictions allow the pod's containers to "gracefully terminate" and will respect the PodDisruptionBudgets you have specified.
 By default "kubectl drain" ignores certain system pods on the node that cannot be killed.
@@ -129,26 +59,7 @@ By default "kubectl drain" ignores certain system pods on the node that cannot b
 
 If there are pods managed by a DaemonSet, you will need to specify "--ignore-daemonsets" with kubectl to successfully drain the node.
 
-*** Change in Prod proccess **
 
-1. create a new change request: https://jpmorganchase.service-now.com/now/nav/ui/classic/params/target/change_request.do%3Fsys_id%3D1ca824e21b6ec2103d4754e8624bcb0c%26sysparm_domain%3Dnull%26sysparm_domain_scope%3Dnull%26sysparm_view%3D%26sysparm_view_forced%3Dtrue
-
-2. create a new incident with similar description: https://jpmorganchase.service-now.com/incident.do?sys_id=9c2cec6e1beec2103d4754e8624bcbaf&sysparm_view=&sysparm_domain=null&sysparm_domain_scope=null
-
-3. find correct breakglass account: https://confluence.dynamo.prd.aws.jpmchase.net/display/CPE/Break+Glass+-+%28DYN%29+AWS+FIDs
-
-4. request breakglass password: https://psp.jpmchase.net/psp-service/index.html?vaultName=HRA
-
-5. login to aws console in new incognito window with the breakglass account and generated password
-** choose this option: EMEA-PCORE-READONLY-105250-PROD
-
-6. test this lambda function to create new bastion host:  105250-0000ie-pcore-dn-pcore-data-breakglassStartUp or 105250-0000ie-pcore-dn-pcore-vault-breakglassStartUp
-
-7. ssh into the breakglass EC2 instance via Session Manager (NOT readonly) i.e: "105250-0000ie-pcore-dn-pcore-vault-breakglass-bastion"
-
-8. test this lambda function to delete created bastion hosts:  105250-0000ie-pcore-dn-pcore-data-breakglassCleanUp or 105250-0000ie-pcore-dn-pcore-vault-breakglassCleanUp
-
-* the breakglass password should work for 1-2 hours
 
 Kubernetes Disruption:
 pods do not disappear until someone(person or controller) destroys them, or there is an unavoidable hardware or system software error.
@@ -270,15 +181,7 @@ sets the rate of generated messages per second:
 > auditctl -r 0
 
 
-OIDC
 
-Open ID Connect
-
-OpenID Connect is an interoperable authentication protocol based on the OAuth 2.0 framework of specifications (IETF RFC 6749 and 6750). It simplifies the way to verify the 
-identity of users based on the authentication performed by an Authorization Server and to obtain user profile information in an interoperable and REST-like manner.
-OpenID Connect enables application and website developers to launch sign-in flows and receive verifiable assertions about users across Web-based, mobile, and JavaScript 
-clients. And the specification suite is extensible to support a range of optional features such as encryption of identity data, discovery of OpenID Providers, and session 
-logout.
 
 
 EKS OIDC => Your cluster has an OpenID Connect (OIDC) issuer URL associated with it. To use AWS Identity and Access Management (IAM) roles for service accounts, an IAM OIDC
@@ -326,68 +229,6 @@ resource using kubectl or another tool.
 4- Once the operator is deployed and the SampleDB resource is created, the operator will begin to manage the resource. It will perform tasks such as deploying the database, taking backups, handling upgrades, 
 and simulating failure.
 How to deploy Prometheus Operator (without Helm): https://prometheus-operator.dev/docs/user-guides/getting-started/
-
-
-Break Glass
-
-Using modern cloud environments, specifically production environments, decreases the need for human access.
-It makes sense for developers to have access to Dev or Test environments, but in a properly designed production environment, everything should be automated — from deployment, and observability to self-healing. 
-In most cases, no human access is required.
-Production environments serve customers, require zero downtime, and in most cases contain customers data.
-There are cases such as emergency scenarios where human access is required.
-
-In mature organizations, this type of access is done by the Site reliability engineering (SRE) team.
-The term break-glass is an analogy to breaking a glass to pull a fire alarm, which is supposed to happen only in case of emergency.
-
-break-glass accounts should be used in emergency cases only.
-
-* 	Authentication — All access through the break-glass mechanism must be authenticated, preferred against a central identity provider, and not using local accounts
-* 	Authorization — All access must be authorized using role-based access control (RBAC), following the principle of least privilege
-* 	MFA — Since most break-glass scenarios require highly privileged access, it is recommended to enforce multi-factor authentication (MFA) for any interactive access
-* 	Just-in-time access — All access through break-glass mechanisms must be granted temporarily and must be revoked after a pre-define amount of time or when the emergency is declared as over
-* 	Approval process — Access through a break-glass mechanism should be manually approved
-* 	Auditing — All access through break-glass mechanisms must be audited and kept as evidence for further investigation
-* 	Documented process — Organizations must have a documented and tested process for requesting, approving, using, and revoking break-glass accounts
-
-AWS
-Identity Management
-Identities in AWS are managed using AWS Identity and Access Management (IAM).
-When working with AWS Organizations, customers have the option for central identity management for the entire AWS Organization using AWS IAM Identity Center — a single-sign-on (SSO) and federated identity 
-management service (working with Microsoft Entra ID, Google Workspace, and more).
-Since there might be a failure with a remote identity provider (IdP) or with AWS IAM Identity Center, AWS recommends creating two IAM users on the root of the AWS Organizations tree, and an IAM break-glass 
-role on each of the accounts in the organization, to allow access in case of emergency.
-
-Passwords for the break-glass IAM accounts must be stored in a secured vault, and once the work on the break-glass accounts is over, the passwords must be replaced immediately to avoid reuse.
-Access using break-glass IAM accounts must be temporary
-
-Auditing
-All API calls within the AWS environment are logged into AWS CloudTrail by default, and stored for 90 days.
-it is recommended to send all CloudTrail logs to a central S3 bucket, from the entire AWS Organization.
-Since audit trail logs contain sensitive information, it is recommended to encrypt all data at rest using customer-managed encryption keys and limit access to the log files to the SOC team for investigation 
-purposes.
-Audit logs stored inside AWS CloudTrail can be investigated using Amazon GuardDuty.
-
-Resource Access
-- access to EC2 instances, using EC2 Instance Connect or AWS Systems Manager Session Manager.
-- access to Amazon EKS nodes, using AWS Systems Manager Agent (SSM Agent).
-- access to Amazon ECS container, using AWS Systems Manager, and for debugging purposes using Amazon ECS Exec.
-- secured access to Amazon RDS, using AWS Systems Manager Session Manager.
-
-https://github.com/awslabs/aws-break-glass-role
-
-1. Start session on RSAM then close it
-2. Join EPVAllUsers group (add member, via SID, creates RSAM request that manager should approve)
-3. Select proper consumer bank group to join (same process as above)
-4. Choose the account based on your EPV group
-5. Go/psp-bg to get password for the account, retrieve temp password
-
-https://confluence.dynamo.prd.aws.jpmchase.net/pages/viewpage.action?pageId=531504981
-https://confluence.dynamo.prd.aws.jpmchase.net/display/~e898726/TM+Ops+UI
-https://confluence.dynamo.prd.aws.jpmchase.net/pages/viewpage.action?pageId=538242411
-https://confluence.dynamo.prd.aws.jpmchase.net/display/~w607904/2.+Key+Vault+Resources
-https://confluence.dynamo.prd.aws.jpmchase.net/pages/viewpage.action?pageId=317184309
-https://confluence.dynamo.prd.aws.jpmchase.net/display/CPE/Break+Glass+-+AWS+Harness+Bootstrap+FIDs
-
 
 
 Metrics Server
@@ -526,12 +367,6 @@ Choose your cluster
 Poke around OpenLens.
 
 
-webhooks => A webhook is an HTTP-based callback function that allows lightweight, event-driven communication between 2 application programming interfaces (APIs). Webhooks are used by a wide variety of web apps to receive small amounts of data from other apps, but webhooks can also be used to trigger automation workflows in GitOps environments.
-To set up a webhook, the client gives a unique URL to the server API and specifies which event it wants to know about. Once the webhook is set up, the client no longer needs to poll the server; the server will automatically send the relevant payload to the client’s webhook URL when the specified event occurs.
-In this context, the git repository plays the role of the server app, while the desired state engine—which manages the state of infrastructure—plays the role of the client app. Webhooks can be used to notify the desired state engine every time a change is made in the git repository. If a piece of code is updated and pushed to the repository, this event will trigger the webhook. The repository then automatically sends the payload to the desired state engine’s webhook address, informing it of the code change.
-
-
-
     provider "aws" {
       version = "~> 2.70.0"
       region = "${var.region}"
@@ -615,38 +450,6 @@ data "aws_iam_policy_document" "aurora_kms_policy" {
   }
 }
 
-
-*** Borrow Journey ***
-
-
-for latency metrics we only care for the latency between when user clicks something and what he gets back, not specific delays of internal services
-
-CLM   => Credit Line Manager
-CBAM  => Core Banking Account Manager , works as a core banking middle man between vault and other services
-TM    => Tought Machine Vault
-BAC   => 
-
-borrow : account creation / account upgrade / account closire => each have their own flows
-
-creation clm -> cbam
-account creation flow : clm -> cbam * requirement outcome * -> cbam -> tm -> tm -> clm kafka * done asynchronously * -> cbam -> clm (account creation confirmation)
-
-account closure flow : clm * change status * -> cbam -> close account
-                       bac -> cbam * deactivate account *
-                       cml - * credit increase /decrease * -> borrow temporal -> account closure service -> * change account status * -> cbam -> notification manager
-
-
-
-scheduler comes from TM vault
-
-borrow schedulers -> create their own topic
-    account scheduler outcome processor
-    account scheduler job processor
-    response -> contract directive
-    scheduler jobs published
-    DB execusion
-
-vault.core.contracts.journeys.account_schedule.responses
 
 
 pip3 install pipenv
@@ -737,12 +540,9 @@ DROP USER test_user;
   # alias tf=/usr/local/jpmc/versions/0.12.31/terraform
 
 
-*** accessing Hashicorps Vault ***
 
-kubectl get pod -n 105250-core-hault -o wide
-kubectl port-forward hault-0 8200:8200 -n 105250-core-hault
-** open new incognito window => https://127.0.0.1:8200
-** go to S3 and get the token for hault => login to hault via token
+
+
 
 
 "postgres://YourUserName:YourPassword@YourHostname:5432/YourDatabaseName"
@@ -752,25 +552,6 @@ postgres://postgress:PASS@db-105250-000ie-dcore-tnn-core-vault-cluster:5432
 
 python3 blue-green-replication.py --blue-db="db-105250-0000ie-icore-tnn-core-vault-cluster" --green-db="db-105250-0000ie-icore-tnn-core-vault-cluster" --mode=grant_pg_monitor
 
-* vault-tools are in 105250-vault-operators namespace
-kubectl get pods --all-namespaces | grep vault-tool
-kubectl get pod -n 105250-vault-operators
-kubectl exec -it vault-tools-xxxx-xxxx -n 105250-vault-operators -- bash
-
-
-** How to do a change in Vault **
-
-https://confluence.dynamo.prd.aws.jpmchase.net/display/DIGPROJECT/Update+process+-+operator+based+approach
-
-1. change some value in helm-chart/vault-init, create pr
-2. run "vault_init_helm_service_deploy" pipeline on harness
-    a. chartVersion: version from current PR
-    b. installationMode: install-vault
-    c. phaseTwoContinuousReconcile: true
-    d. vaultToolsImageTag: vault-tools latest commit version
-
-
-python3 blue-green-replication.py --blue-db="db-105250-0000ie-dcore-tnn-core-vault-cluster"  --green-db="db-105250-0000ie-dcore-tnn-core-vault-cluster" --mode=grant_pg_monitor
 
 
 k get cm -A | grep otel
@@ -783,23 +564,6 @@ k get cm otel-gateway-conf-fdg7dt2f9d-namespaced-observability-c547c3d65f -n 105
 
 
 **********************
-what is a password or secret rotation?
-
-Password or secret rotation refers to the practice of periodically changing passwords, API keys, encryption keys, or other types of secrets used to access systems, applications, or data. This practice is a critical component of security management and helps to mitigate the risk of unauthorized access due to compromised credentials. Here are some key aspects of password or secret rotation:
-
-Why Rotate Passwords or Secrets?
-Mitigate Risk of Compromise: If a password or secret is compromised, rotating it limits the window of opportunity for an attacker to use it.
-Compliance: Many regulatory standards and security frameworks (e.g., PCI-DSS, HIPAA) require regular rotation of passwords and secrets.
-Reduce Impact of Insider Threats: Regular rotation can help minimize the risk posed by disgruntled employees or other insiders who might misuse their access.
-Limit Exposure: In case of a data breach, rotating secrets can help ensure that any exposed credentials are no longer valid.
-
-Types of Secrets to Rotate
-User Passwords: Passwords used by individuals to access systems and applications.
-API Keys: Keys used to authenticate and authorize API requests.
-Encryption Keys: Keys used to encrypt and decrypt data.
-Database Credentials: Usernames and passwords used to access databases.
-Service Account Credentials: Credentials used by applications or services to interact with other systems.
-
 Best Practices for Secret Rotation
 Automate Rotation: Use tools and scripts to automate the rotation process to reduce human error and ensure consistency.
 Use a Secret Management System: Tools like HashiCorp Vault, AWS Secrets Manager, and Azure Key Vault can help manage and rotate secrets securely.
