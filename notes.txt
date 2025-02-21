@@ -152,22 +152,6 @@ sets the maximum amount of existing Audit buffers in the kernel:
 sets the rate of generated messages per second:
 > auditctl -r 0
 
-
-
-
-
-EKS OIDC => Your cluster has an OpenID Connect (OIDC) issuer URL associated with it. To use AWS Identity and Access Management (IAM) roles for service accounts, an IAM OIDC
- provider must exist for your cluster's OIDC issuer URL.
-
-create an IAM OIDC identity provider for your cluster with eksctl:
-> cluster_name=my-cluster
-> oidc_id=$(aws eks describe-cluster --name $cluster_name --query "cluster.identity.oidc.issuer" --output text | cut -d '/' -f 5)
-> echo $oidc_id
-> aws iam list-open-id-connect-providers | grep $oidc_id | cut -d "/" -f4
-
-If it returns an empty string, create an OIDC provider:
-> eksctl utils associate-iam-oidc-provider --cluster $cluster_name --approve
-
 Operator and CRD:
 
 1. Operators make it possible to extend Kubernetes functionality to stateful applications as well, not just stateless applications. And that alone is an important advantage, because stateful cloud applications and services are much more complex to manage than stateless ones. Some stateful operators are: Prometheus Operator for the monitoring solution and Postgres Operator to manage high-availability PostgreSQL database clusters.
@@ -592,81 +576,6 @@ else
     echo "Failed to create service account '$SERVICE_ACCOUNT_NAME' in namespace '$NAMESPACE'."
     exit 1
 fi
-
-
-Requirements
-When an Aurora cluster is created, encryption must be enabled whilst using a customer-managed key (CMK).
-
-Note that an Aurora cluster's encryption key cannot be modified afterwards.
-Each Aurora cluster must use its own CMK for encryption-at-rest.
-
-It is forbidden for multiple Aurora clusters to share an encryption key.
-This specific requirement only applies to Aurora clusters created after October 2023.
-The CMK's specifications are:
-
-Key type: symmetric
-Key usage: Encrypt and decrypt
-Key material origin: KMS
-Regionality: Single-region key
-Enable automatic rotation every year
-No need to configure special key policy on top of the default one
-Control aspects
-TCP-1.05: Data Protection
-
-
-
-
-Encryption in transit
-Definition
-All network traffic to and from Aurora DB instances must be encrypted in transit.
-
-Requirements
-TLS 1.2 or above must be used to encrypt the network traffic to and from Aurora instances.
-
-The following parameters within the PostgreSQL parameter group need to be set:
-
-rds.force_ssl  must be set to 1
-ssl_ciphers  must be set to:
-DHE-RSA-AES128-SHA,DHE-RSA-AES128-SHA256,DHE-RSA-AES128-GCM-SHA256,DHE-RSA-AES256-SHA,DHE-RSA-AES256-SHA256,DHE-RSA-AES256-GCM-SHA384,ECDHE-RSA-AES256-SHA384,ECDHE-RSA-AES128-SHA,ECDHE-RSA-AES128-SHA256,ECDHE-RSA-AES128-GCM-SHA256,ECDHE-RSA-AES256-SHA,ECDHE-RSA-AES256-GCM-SHA384,TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_RSA_WITH_AES_256_GCM_SHA384,TLS_RSA_WITH_AES_256_CBC_SHA,TLS_RSA_WITH_AES_128_GCM_SHA256,TLS_RSA_WITH_AES_128_CBC_SHA256,TLS_RSA_WITH_AES_128_CBC_SHA,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
-
-The SQL client must specify sslmode=verify-full as a connection parameter.
-
-This requires the Aurora DB's CA certificate to be in the client's trust store.
-The CA bundle can be downloaded at https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/UsingWithRDS.SSL.html.
-The following CA bundles are allowed:
-
-rds-ca-rsa2048-g1: RSA2048 + SHA256
-rds-ca-rsa4096-g1: RSA4096 + SHA384
-rds-ca-ecc384-g1: ECC384 + SHA384
-Control aspects
-TCP-1.04: Identity & Access Management
-
-TCS-024: Digital Certificate Management
-TCS-024-001: Digital Certificate Usage
-CP-4766 Use of Digital Certificates
-TCS-024-003: Digital Certificate Ownership
-CP-4768 Digital Certificate Ownership
-TCS-024-004: Digital Certificate Validity Period
-CP-4769 Digital Certificate Validity Period
-TCS-024-005: Digital Certificate Renewal
-CP-4770 Digital Certificate Renewal
-TCS-024-006: Digital Certificate Revocation
-CP-4771 Digital Certificate Revocation
-TCS-024-007: Digital Certificate Cryptographic Requirements
-CP-4772 Digital Certificate Key Pairs
-TCP-1.05: Data Protection
-
-TCS-012: Data in Transit Protection
-TCS-012-001: Confidentiality Protection in Transit
-CP-2812 Data in Transit Encryption
-TCS-013: Crptographic Mechanisms
-TCS-013-001: Prevent Compromise of Data due to Weak Cryptography
-CP-2807 Use of Cryptographic Algorithms & Key Lengths
-Implementation
-Encryption in transit configuration on the Aurora side is enforced by default when using CPE Aurora TF module.  
-Encryption in transit configuration on the client side example:
-url: jdbc:aws-wrapper:postgresql://example.eu-west-1.rds.amazonaws.com:5432/db?sslmode=verify-full&sslrootcert=/aurora-certs/global-bundle.pem
-global-bundle.pem: is provided by aurora-ssl-certificates
 
 
 In the Jenkinsfile:
@@ -1653,66 +1562,6 @@ sum by(kubernetes_namespace)(  increase(scheduler_job_publish_lag_seconds_count{
 sum by(kubernetes_namespace)(
   increase(scheduler_job_publish_lag_seconds_count{kubernetes_cluster=~"dn-pcore-vault.*", kubernetes_namespace=~"105250-core-vault"}[$rate])
 )
-
-
-Aurora global has several advantages when it comes to read latency.
-
-first it can have several read clusters in different regions which can reduce the latency of read operations in those regions (however since all our customers are in western Europe at the moment it is not very significant advantage for us).
-
-second, you can scale different read clusters separately based on the throughput and user activity in that specific region, independently from other read-clusters in other regions.
-
-
-
-however read operations in secondary clusters will have more delays compared to primary region cluster.
-
-
-Aurora global will increase resiliency for read operations, as it can have read instances in up to 5 different regions, however write instance can only be in one region (same as normal aurora cluster). we have the option of failover to another region and promoting it to writer cluster. such operation is expected to be done in matter of minutes (so a few minutes of outage), however You can only perform a managed cross-Region database failover on an Aurora global database if the primary and secondary DB clusters have the same major, minor, and patch level engine versions. otherwise such operation will fail.
-
-its also worth mentioning that due to connection between primary and secondary regions being asynchronous, there might be some outdated results on the new primary node.
-
-
-
-our database cluster uses username/password with aws secretmanager for accessing password, but such feature is NOT available on global aurora, which makes using it impossible for us at the moment.
-
-also automatic minor version upgrade and change of parameter group while upgrading database version, is NOT available on global aurora cluster and it can't use Serverless-v1 databases, only serverless-v2.
-
-
-
-
-EKS cluster => currently these set of resources do not exist in other regions in EU and need to be created before vault initialization step ( creation of EKS cluster might break the active-passive hot-cold design model).
-
-
-
-Permission Boundary, Infra deployer => these set of policies should be set to allow the deployment of further resources in the new region and availability zones
-
-
-
-Service Account for RDS , Aurora secret Policy => since Vault init uses these values from Aurora and RDS, there is an issue that how can Aurora database be implemented in this new region. as Global aurora is currently not usable, are we allowed to create separate new cluster and synchronize it with the one in Ireland region?
-
-https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/AuroraMySQL.Replication.CrossRegion.html
-
-
-
-S3 => new buckets should be deployed for backup of vault init in the new region, can be synchronized via data replication from existing S3 buckets
-
-
-
-resources that need to exist in the second region for vault initialization:
-
-AWS Account
-
-Dynamo Seal ID
-
-EKS Cluster (namespace, operator,..)
-
-Service Account
-
-Permission Boundary, Infra deployer
-
-Service Account for RDS , Aurora secret Policy
-
-S3 bucket for backup
-
 
 
 count(kube_pod_status_phase{phase="Running", kubernetes_cluster="dn-icore-vault.dynamo.eng.eu-west-1.aws.jpmchase.net"} == 1)
