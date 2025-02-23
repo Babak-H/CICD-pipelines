@@ -2,53 +2,6 @@
 7. kubectl cp cert_vault-operator-sa -n 105250-core-hault hault-0:/tmp/cert_vault-operator-sa -c vault  : copy cert to hashicorp vault pod
 10. kubectl cluster-info : find what ip address the kubernetes master is running at
 
-
-#!/bin/bash
-
-# Function to scale deployments
-function scale_deployments() {
-    local namespace=$1
-    local scale_to=$2
-    kubectl scale deployment --namespace=$namespace --replicas=$scale_to $(kubectl get deployments --namespace=$namespace -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' | egrep -v "vault-tools|istio-annotation-tm-webhook"  )
-}
-
-# Function to scale jobs
-function scale_jobs() {
-    local namespace=$1
-    local scale_to=$2
-    kubectl scale job --namespace=$namespace --replicas=$scale_to $(kubectl get job --namespace=$namespace -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}')
-}
-
-# Function to scale statefulsets
-function scale_statefulsets() {
-    local namespace=$1
-    local scale_to=$2
-    kubectl scale statefulset --namespace=$namespace --replicas=$scale_to $(kubectl get statefulset --namespace=$namespace -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}')
-}
-
-# Parse command-line arguments
-while getopts ":n:s:" opt; do
-    case $opt in
-        n) namespace=$OPTARG ;;
-        s) scale_to=$OPTARG ;;
-        \?) echo "Invalid option: -$OPTARG" >&2; exit 1 ;;
-        :) echo "Option -$OPTARG requires an argument." >&2; exit 1 ;;
-    esac
-done
-
-# Check if required arguments are provided
-if [[ -z $namespace || -z $scale_to ]]; then
-    echo "Usage: $0 -n <namespace> -s <scale>"
-    exit 1
-fi
-
-# Scale deployments, jobs, and statefulsets
-echo "Running autoscaler for $namespace - setting replicas to: $scale_to"
-scale_deployments $namespace $scale_to
-
-
-
-
 #!/bin/bash
 # Help function
 function usage() {
