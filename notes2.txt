@@ -82,19 +82,6 @@ done
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 @Library(['dynamo-shared-lib', 'services-shared-lib'])
 def podTemplateYaml = libraryResource('maven-kaniko-jdk11-helm.yaml')
 
@@ -118,74 +105,6 @@ buildAndDeploy {
 }
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# how can i create a custom promql function/expression?
-
-Creating a custom PromQL function or expression involves understanding how Prometheus works and potentially extending its functionality. PromQL, the query language for Prometheus, is designed to be flexible and powerful, but it doesn't natively support user-defined functions like some other query languages. However, you can achieve similar results through a few different approaches:
-
-Recording Rules:
-
-You can create recording rules in Prometheus to precompute and store the results of complex expressions. This is useful for frequently used queries that are computationally expensive.
-Define a recording rule in your Prometheus configuration file under the rule_files section. For example:
-yaml
-
-
-
-groups:
-- name: custom_rules
-  rules:
-  - record: job:http_inprogress_requests:sum
-    expr: sum by (job) (http_inprogress_requests)
-This rule will compute the sum of http_inprogress_requests by job and store it as a new time series job:http_inprogress_requests:sum.
-Prometheus Exporters:
-
-If you need to perform custom calculations that are not possible with PromQL, consider writing a custom Prometheus exporter. Exporters can expose metrics in a format that Prometheus can scrape, and you can implement any custom logic you need in the exporter code.
-External Processing:
-
-Use external tools or scripts to process Prometheus data. You can use the Prometheus HTTP API to fetch raw data and then process it using a programming language of your choice (e.g., Python, Go).
-This approach allows for complex calculations and custom logic that are not feasible directly in PromQL.
-PromQL Extensions:
-
-If you are comfortable with Go programming and want to extend Prometheus itself, you can modify the Prometheus source code to add new functions to PromQL. This is an advanced approach and requires maintaining your custom version of Prometheus.
-Grafana Transformations:
-
-If you are using Grafana to visualize Prometheus data, you can use Grafana's transformation features to manipulate data after it has been queried from Prometheus.
-Each of these methods has its own use cases and trade-offs. If you can achieve your goal with recording rules or exporters, those are generally the most straightforward and maintainable approaches. Extending Prometheus itself is powerful but requires significant effort and maintenance.
-
-
-
-
-
-
-kafka_burrow_partition_current_offset_non_vault{aws_account_name="NCORE", cluster="vault", container="exporter", env="test", group="borrow-collections-service", icb_jpmorgan_com_squad="ICB_Ledgers", instance="100.72.3.7:13434", job="105250-core-vault/burrow", k8scluster="dn-ncore-vault", kubernetes_namespace="105250-core-vault", namespace="105250-core-vault", partition="0", pod="burrow-6ccd99d4c-l2gsg", project="kafka", prometheus="monitoring/prometheus", prometheus_cluster_replica="prometheus-prometheus", prometheus_replica="prometheus-prometheus-0", quality="full-fat", region="eu-west-1", topic="chase.borrow.refresh-collections-batch-v001.dlq"}
-
-
-
-
 kubectl patch -n kube-system daemonset/istio-cni-node --type json -p='[{"op": "remove", "path": "/spec/template/spec/containers/0/resources/limits/cpu"}]' || true
       # DYN-610676
       kubectl patch -n kube-system clusterrole/istio-cni --type json -p='[{"op": "add", "path": "/rules/0/verbs", "value": ["get", "list", "watch", "delete"]}]'
@@ -201,14 +120,6 @@ python3 -m pipenv install -r requirements.txt
 
 
 kubectl get --raw "/apis/custom.metrics.k8s.io/v1beta1/namespaces/105250-core-vault/deployments.apps/vault-postings-account-postings-processor/max_service_consumer_group_lag"{"kind":"MetricValueList","apiVersion":"custom.metrics.k8s.io/v1beta1","metadata":{},"items":[{"describedObject":{"kind":"Deployment","namespace":"105250-core-vault","name":"vault-postings-account-postings-processor","apiVersion":"apps/v1"},"metricName":"max_service_consumer_group_lag","timestamp":"2024-02-27T16:21:55Z","value":"0","selector":null}]}
-
-
-
-sum(increase(http_server_requests_seconds_count{app="borrow-fa-gateway", uri="/api/v1/borrow/financial-assistance/gateway/customer/{customerId}/status/{statusId}", method="PUT", status!~"2.*"}[2h]))
-
-1 - sum(increase(http_server_requests_seconds_count{app="borrow-fa-gateway", uri="/api/v1/borrow/financial-assistance/gateway/customer/{customerId}/status/{statusId}", method="PUT", status!~"2.*"}[2h])) / sum(increase(http_server_requests_seconds_count{app="borrow-fa-gateway", uri="/api/v1/borrow/financial-assistance/gateway/customer/{customerId}/status/{statusId}", method="PUT"}[2h]))
-
-
 
 
 
@@ -442,60 +353,6 @@ scrape_configs:
     action: keep
 
 
-# https://prometheus.dn-dcore-vault.dynamo.dev.eu-west-1.aws.jpmchase.net/rules
-# separate page only for alerting rules
-
-alert:PrometheusTSDBCompactionsFailing
-expr:increase(prometheus_tsdb_compactions_failed_total{job="prometheus-prometheus",namespace="monitoring"}[3h]) > 0
-for: 4h
-labels:
-configuration_item: IC Dynamo Core Engineering
-seal_id: 106605
-severity: warning
-squad: DXE_Observability
-tribe: DXE_Developer_Experience_Engineering
-annotations:
-description: Prometheus {{$labels.namespace}}/{{$labels.pod}} has detected {{$value | humanize}} compaction failures over the last 3h.
-runbook_url: https://runbooks.prometheus-operator.dev/runbooks/prometheus/prometheustsdbcompactionsfailing
-summary: Prometheus has issues compacting blocks.
-OK		5.692s ago	0.486ms
-
-
-alert:PrometheusNotIngestingSamples
-expr:(sum without (type) (rate(prometheus_tsdb_head_samples_appended_total{job="prometheus-prometheus",namespace="monitoring"}[5m])) <= 0 and (sum without (scrape_job) (prometheus_target_metadata_cache_entries{job="prometheus-prometheus",namespace="monitoring"}) > 0 or sum without (rule_group) (prometheus_rule_group_rules{job="prometheus-prometheus",namespace="monitoring"}) > 0))
-for: 10m
-labels:
-configuration_item: IC Dynamo Core Engineering
-seal_id: 106605
-severity: warning
-squad: DXE_Observability
-tribe: DXE_Developer_Experience_Engineering
-annotations:
-description: Prometheus {{$labels.namespace}}/{{$labels.pod}} is not ingesting samples.
-runbook_url: https://runbooks.prometheus-operator.dev/runbooks/prometheus/prometheusnotingestingsamples
-summary: Prometheus is not ingesting samples.
-OK		5.691s ago	1.135ms
-
-
-alert:PrometheusDuplicateTimestamps
-expr:rate(prometheus_target_scrapes_sample_duplicate_timestamp_total{job="prometheus-prometheus",namespace="monitoring"}[5m]) > 0
-for: 10m
-labels:
-configuration_item: IC Dynamo Core Engineering
-seal_id: 106605
-severity: warning
-squad: DXE_Observability
-tribe: DXE_Developer_Experience_Engineering
-annotations:
-description: Prometheus {{$labels.namespace}}/{{$labels.pod}} is dropping {{ printf "%.4g" $value }} samples/s with different values but duplicated timestamp.
-runbook_url: https://runbooks.prometheus-operator.dev/runbooks/prometheus/prometheusduplicatetimestamps
-summary: Prometheus is dropping samples with duplicate timestamps.
-
-
-# https://prometheus.dn-dcore-vault.dynamo.dev.eu-west-1.aws.jpmchase.net/service-discovery
-# address of all the endpoints that we are scraping to get the metrics
-
-
 Kafka-console-consumer --bootstrap-server $BOOTSTRAP_SERVER:9092 --offset 1 --partition 1 --max-messages 1 --value-deserializer "org.apache.kafka.common.serialization.BytesDeserializer" --consumer.config /home/appuser/conect.properties --topic $topic_name
 
 
@@ -564,32 +421,6 @@ function kdeploy() {
 function knodes() {
   kubectl get nodes "$@"
 }
-
-
-### HashiCorp Vault Grafana Metrics ###
-Health Status: group by (pod) (up{job="hault"})  => checks if the hault pods are up and working or not (currently only shows existing pods)
-
-Sealed Status: max(1 + vault_core_unsealed{}) => if the vault is unseal (unlocked) value is 2 otherwise 1 (sealed)
-
-Secrets: vault_secret_kv_count => count of key-value (KV) secrets stored in HashiCorp Vault visible in column Number of entries, rest is info about the mount path of secrets and the app that contains the secret,...
-
-Number of Operations in secret: vault_route_read_secret__count =>  the count of read operations on secrets through specific routes in Vault. In Vault, routes are used to define how requests are handled, and this metric would track the number of times secrets are read via these route
-
-Time of Operations in secret: avg(rate(vault_route_read_${mountpoint}__sum[1m]) / rate(vault_route_read_${mountpoint}__count[1m]) * 1000) => how long each reading or listing of secrets takes in this namespace, by average
-
-Heap objects used: avg(vault_runtime_heap_objects{} / vault_runtime_malloc_count{}) => (number of heap objects currently allocated in the memory of the Vault process. Heap objects are dynamically allocated memory blocks) / ( total number of memory allocation (malloc) operations performed by the Vault process),  average number of heap objects per memory allocation operation, lower than 0.2 means memory is being used efficiently 
-
-Allocated MB: avg(vault_runtime_alloc_bytes{}/1000000) =>  number of Megabytes of memory currently allocated and in use by the Vault process, we can view how the memory usage is on average for all 3 Vault pods
-
-Available Tokens: avg(vault_token_count) => number of active tokens in HashiCorp Vault. In Vault, tokens are used for authentication and authorization. They are issued to clients and can have various properties such as time-to-live (TTL), policies, and renewable status
-
-Pending Tokens: avg(vault_token_create_count - vault_token_store_count) => count of token creation operations in HashiCorp Vault - count of tokens currently stored in Vault , so you will get how many tokens are created but not saved in Vault
-
-Request Handling: sum(vault_core_handle_request) by (quantile) => which quantile (p 0.5 , p 0.9 , p 0.99) handles how many requests
-
-Log Requests: vault_audit_log_request_count, vault_audit_log_response_count => count of audit log requests in Vault. Vault's audit logging feature records all requests and responses to the Vault server, providing a detailed log of all operations for security and compliance purposes. This metric would track the number of audit log entries created
-
-Log Request/Response Failures: vault_audit_log_request_failure, vault_audit_log_response_failure => count of failed attempts to log request/responses in the audit log of Vault. Vault's audit logging feature records all requests and responses to the Vault server, and this metric would track the number of times an attempt to log a request/response has failed. Failures could occur due to various reasons such as misconfigurations, permission issues, or storage problems.
 
 
 ### Core-Hault-Operator migration from 0.11.15 to 1.4.6 ###
