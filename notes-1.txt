@@ -1345,23 +1345,6 @@ export TOKEN=`curl -k -X GET -s -H "X-Vault-Token:$HAULT_TOKEN" "$HAULT_URL/v1/s
 curl -H "X-Auth-Token: $TOKEN"   -X GET "http://core-api-gateway.105250-core-vault.svc.cluster.local:8080/v1/service-accounts/3334187489314479372" 
 
 
-
-
-(temporal_workflow_endtoend_latency_seconds_sum{workflow_type=~"UKCreditCardEligibilityWorkflow|UKCreditCardApplyWorkflow"})
-
-
-(temporal_activity_succeed_endtoend_latency_seconds_bucket{activity_type=~"SendApplyEligibilityResponse|SendCheckEligibilityResponse", workflow_type=~"UKCreditCardApplyWorkflow|UKCreditCardEligibilityWorkflow",task_queue="CREDIT_CARD_ELIGIBILITY_PUBLISH_RESPONSE_TASK_QUEUE"})
-
-
-(temporal_workflow_completed_total{namespace=~"105250-borrow", exported_namespace="borrow", workflow_type=~"UKCreditCardApplyWorkflow|UKLoanEligibilityWorkflow"})
-
-
-(temporal_workflow_endtoend_latency_seconds_count{workflow_type=~"UKCreditCardEligibilityWorkflow|UKCreditCardApplyWorkflow"})
-
-
-Corebanking-temporal-client-metrics-sdk
-Corebanking-temporal-server-common
-
 ========
 
 apiVersion: secrets-store.csi.x-k8s.io/v1
@@ -1414,22 +1397,6 @@ args:
 }
 
 =========================================
-
--- Number of identity entities: avg(vault_identity_num_entities) => number of identity entities in HashiCorp Vault. In Vault, an identity entity is a unique identity that can be associated with one or more authentication methods. This allows for a unified identity management system within Vault. this is per each namespace. identity entity can be considered mix of user/identity and how it can be authenticated
-
--- Number of Leases: vault_expire_num_leases => the number of leases (a lease is a time-bound token or secret that has an expiration time. Leases are used to manage the lifecycle of secrets and tokens) that are currently managed by HashiCorp Vault
-
--- Tokens by TTL: avg without(instance) (vault_token_count_by_ttl) => the count of tokens in HashiCorp Vault, categorized by their time-to-live (TTL). TTL is a duration that specifies how long a token is valid before it expires.
-
--- Token Lookups: avg(irate(vault_token_lookup_count[1m])) => This metric likely represents the count of token lookup operations in HashiCorp Vault. A token lookup operation is typically used to retrieve information about a specific token, such as its policies, TTL, and other metadata, average by all vault pods
-
-— avg(irate(vault_policy_get_policy_count[1m])) => count of policy retrieval operations in HashiCorp Vault. In Vault, policies are used to define what actions and operations are permitted for different users and roles. This metric would track the number of times policies have been retrieved or accessed.
-
-
-
-
-
-
 kafka:
   panels:
     - name: fa_capquest_scod_updates_kafka_takes_too_long
@@ -1578,169 +1545,6 @@ SHELL ["sh", "-c"]
 COPY JPMCROOTCA.pem /usr/local/share/ca-certificates/JPMCROOTCA.crt
 RUN update-ca-certificates || true
 USER tm-app
-
-
-
-kafka:
-  panels:
-    - name: fa_capquest_transaction_update_kafka_takes_too_long_ODS
-      type: lag
-      queries:
-        - consumergroup: borrow-fa-gateway
-          topics: chase.ods-transaction-enrichment-service.transaction-enrichment-event-v001
-          threshold: 0
-          agg_function: min()
-          agg_window: 5m
-      alert:
-        severity: MINOR
-        for: 20m
-        message: Consumer lag for transaction event topic in borrow-fa-gateway has been increasing for 20 minutes - fa-gateway is taking too long to process ODS transaction events - customer transactions are not being sent over to Capquest in a timely manner
-    - name: fa_capquest_transaction_update_kafka_failure_process_ODS
-      type: lag
-      queries:
-        - consumergroup: borrow-fa-gateway
-          topics: chase.borrow.fagateway.transaction-enrichment-event-v001.triage
-          threshold: 0
-          agg_function: min()
-          agg_window: 15m
-      alert:
-        severity: MINOR
-        for: 1m
-        message: the consumer lag on this topic has been > 0 for the last 15 minutes - this means this event has now landed on the triage topic which has been blocked for 15 minutes - this indicates that a transaction update has failed to be sent over to Capquest in a timely manner
-  global_tags:    
-    grafana_notification_channel: Borrow-Collections-Squad
-    customer_journey: BORROW-122
-
-
-
-
-slo:
-  name: account_balance_error_rate
-  sli:
-    events:
-      sli_error_query: sum(rate(http_server_requests_seconds_count{app="borrow-balance-service", uri=~"/api/v1/borrow/(accounts/live-balances|internal/live-balance-views|live-balance-views|accounts/timerange-balances)", method="GET", status!~"2.*|3.*"}[{{ window }}])) or vector(0)
-      sli_total_query: sum(rate(http_server_requests_seconds_count{app="borrow-balance-service", uri=~"/api/v1/borrow/(accounts/live-balances|internal/live-balance-views|live-balance-views|accounts/timerange-balances)", method="GET"}[{{ window }}]))
-  objective: 0.99
-  labels:
-    service: borrow_balance_service
-    squad: core_processing
-    source: internal
-    domain: borrow
-    customer_journey: BORROW-042
-  alerts:
-    dry_run_mode: True
-  grafana_notification_channel: SRE_Core-Alertforge
-
-
-
-
-kafka:
-  panels:
-    - name: fa_capquest_customer_deceased_update_kafka_takes_too_long_tenx
-      type: lag
-      queries:
-        - consumergroup: borrow-fa-gateway
-          topics: 10x.tokenized.client-individual-customer-event-v001-002
-          threshold: 0
-          agg_function: min()
-          agg_window: 5m
-      alert:
-        severity: MINOR
-        for: 20m
-        message: Consumer lag for tenx customer event topic in borrow-fa-gateway has been increasing for 20 minutes - fa-gateway is taking too long to process Tenx events - customer deceased updates are not being sent over to Capquest in a timely manner
-    - name: fa_capquest_transaction_update_kafka_failure_tenx
-      type: lag
-      queries:
-        - consumergroup: borrow-fa-gateway
-          topics: chase.borrow.fa-gateway.client-individual-customer-event-v001.triage
-          threshold: 0
-          agg_function: min()
-          agg_window: 15m
-      alert:
-        severity: MINOR
-        for: 1m
-        message: the consumer lag on this topic has been > 0 for the last 15 minutes - this means that this event has now landed on the triage topic which has been blocked for 15 minutes - this indicates that a customer deceased update has failed to be sent over to Capquest in a timely manner
-  global_tags:    
-    grafana_notification_channel: Borrow-Collections-Squad
-    customer_journey: BORROW-123
-    additional_journeys: BORROW-126
-
-
-
-kafka:
-  panels:
-    - name: fa_capquest_customer_informed_fin_diff_onboarding_kafka_failures_inprocessing
-      type: lag
-      queries:
-        - consumergroup: borrow-collections-service
-          topics: chase.borrow.collections.client-individual-customer-event-v001.triage
-          threshold: 0
-          agg_function: min()
-          agg_window: 10m
-      alert:
-        severity: MINOR
-        for: 1m
-    - name: fa_capquest_customer_informed_fin_diff_onboarding_kafka_failures_inprocessing
-      type: lag
-      queries:
-        - consumergroup: borrow-fa-gateway
-          topics: chase.borrow.fa-gateway.collections-events-v003.triage
-          threshold: 0
-          agg_function: min()
-          agg_window: 10m
-      alert:
-        severity: MINOR
-        for: 1m
-    - name: fa_capquest_customer_informed_fin_diff_onboarding_kafka_takes_too_long
-      type: lag
-      queries:
-        - consumergroup: borrow-collections-service
-          topics: 10x.tokenized.client-individual-customer-event-v001-002
-          threshold: 0
-          agg_function: min()
-          agg_window: 5m
-      alert:
-        severity: MINOR
-        for: 10m
-        message: There has been consumer lag on tenx event topic in collections-service for over 10 mins - collections-service is taking too long to process TenX events - customer informed fin diff onboarding is not happening quickly enough
-    - name: fa_capquest_customer_informed_fin_diff_onboarding_kafka_takes_too_long_process_collection
-      type: lag
-      queries:
-        - consumergroup: borrow-fa-gateway
-          topics: chase.borrow.collections-events-v003
-          threshold: 0
-          agg_function: min()
-          agg_window: 5m
-      alert:
-        severity: MINOR
-        for: 10m
-        message: There has been consumer lag in fa-gateway for collections event topic for over 10 minutes - fa-gateway is taking too long to process collections outbox events from collections-service - customer informed fin diff onboarding is not happening fast enough
-  global_tags:    
-    grafana_notification_channel: Borrow-Collections-Squad
-    customer_journey: BORROW-113
-
-
-
-slo:
-  name: fa_capquest_vulnerability_latency
-  sli:
-    events:
-      sli_error_query: sum(rate(http_server_requests_seconds_count{app="borrow-fa-gateway", uri="/api/v1/borrow/financial-assistance/gateway/customer/{customerId}/status/{statusId}", method="PUT", status=~"2.*"}[{{ window }}])) - sum(rate(http_server_requests_seconds_bucket{app="borrow-fa-gateway", uri="/api/v1/borrow/financial-assistance/gateway/customer/{customerId}/status/{statusId}", method="PUT", status=~"2.*", le=~"8.*"}[{{ window }}]))
-      sli_total_query: sum(rate(http_server_requests_seconds_count{app="borrow-fa-gateway", uri="/api/v1/borrow/financial-assistance/gateway/customer/{customerId}/status/{statusId}", method="PUT", status=~"2.*"}[{{ window }}]))
-  objective: 0.99
-  labels:
-    service: borrow-fa-gateway
-    squad: core_processing
-    source: internal
-    domain: borrow
-    customer_journey: BORROW-109
-  alerts:
-    dry_run_mode: True
-  grafana_notification_channel: SRE_Core-Alertforge
-
-
-
-
 
 
 FROM dockerprod.artifactory.dyn.prd.aws.jpmchase.net/container-base/managedbaseimages/python:3.10.7-stable AS base
@@ -3618,44 +3422,6 @@ COPY ./release-artifacts/$TM_VAULT_VERSION/vaultctl /release-artifacts/vaultctl
 COPY ./release-artifacts/$TM_VAULT_VERSION/release.json /release-artifacts/release.json
 
 
-
-
-
-
-
-
-
-
-avg by (operation) (rate(service_requests{namespace="105250-borrow-temporal", service_name="frontend"}[5m]))
-
-
-sum by (activity_type) (rate(temporal_activity_execution_latency_seconds_count{namespace=~"105250-borrow", exported_namespace="borrow"}[1m]))
-
-sum by (operation) (rate(service_requests{operation=~"StartWorkflowExecution|SignalWorkflowExecution|SignalWithStartWorkflowExecution", namespace="105250-borrow-temporal"}[1m]))
-
-sum by (workflow_type) (rate(temporal_workflow_failed_total{namespace=~"105250-borrow", exported_namespace="borrow"}[1m]))
-
-
-sum by (workflow_type, task_queue) (rate(temporal_workflow_task_queue_poll_succeed_total{namespace=~"105250-borrow", exported_namespace="borrow"}[1m]))
-
-histogram_quantile(0.99, sum(rate(syncmatch_latency_bucket{namespace="105250-borrow-temporal"}[1m])) by (operation, le, type))
-
-histogram_quantile(0.95, sum(rate(syncmatch_latency_bucket{namespace="105250-borrow-temporal"}[1m])) by (operation, le, type))
-
-histogram_quantile(0.99, sum(rate(service_latency_bucket{namespace="105250-borrow-temporal", service_name=~"$Service", operation!~"PollActivityTaskQueue|PollWorkflowTaskQueue"}[1m])) by (operation, le))
-
-histogram_quantile(0.95, sum(rate(service_latency_bucket{namespace="105250-borrow-temporal", service_name=~"$Service", operation!~"PollActivityTaskQueue|PollWorkflowTaskQueue"}[1m])) by (operation, le))
-
-histogram_quantile(0.95, sum(rate(persistence_latency_bucket{namespace="105250-borrow-temporal", type="$Service"}[1m])) by (operation, le))
-
-histogram_quantile(0.95, sum(rate(temporal_activity_succeed_endtoend_latency_seconds_bucket{namespace=~"105250-borrow", exported_namespace="borrow"}[1m])) by ( activity_type, le))
-
-histogram_quantile(0.99, sum(rate(temporal_activity_succeed_endtoend_latency_seconds_bucket{namespace=~"105250-borrow", exported_namespace="borrow"}[1m])) by ( activity_type, le))
-
-histogram_quantile(0.99, sum(rate(client_latency_bucket{namespace="105250-borrow-temporal", service_name=~"$Service", operation=~"MatchingClientPollActivityTaskQueue|MatchingClientPollWorkflowTaskQueue"}[1m])) by (operation, le, service_role))
-
-histogram_quantile(0.95, sum(rate(client_latency_bucket{namespace="105250-borrow-temporal", service_name=~"$Service", operation=~"MatchingClientPollActivityTaskQueue|MatchingClientPollWorkflowTaskQueue"}[1m])) by (operation, le, service_role))
-
 (180 - (time() - max(kube_job_status_completion_time{namespace='105250-borrow-temporal', job_name=~'borrow-temporal-origination-long-running-wf-mon-job.+'}))) or on() vector (0)
 
 (time() - max(kube_job_status_completion_time{namespace='105250-borrow-temporal', job_name=~'borrow-temporal-rds-rotation-cron.+'}))
@@ -3781,8 +3547,6 @@ spec:
                     fieldPath: metadata.labels['job-name']
 
 {{- end }}
-
-
 
 
 pcaCertEnabled: true
