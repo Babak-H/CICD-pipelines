@@ -3421,12 +3421,6 @@ VOLUME /var/run/postgresql
 COPY ./release-artifacts/$TM_VAULT_VERSION/vaultctl /release-artifacts/vaultctl
 COPY ./release-artifacts/$TM_VAULT_VERSION/release.json /release-artifacts/release.json
 
-
-(180 - (time() - max(kube_job_status_completion_time{namespace='105250-borrow-temporal', job_name=~'borrow-temporal-origination-long-running-wf-mon-job.+'}))) or on() vector (0)
-
-(time() - max(kube_job_status_completion_time{namespace='105250-borrow-temporal', job_name=~'borrow-temporal-rds-rotation-cron.+'}))
-
-
 COPY ./release-artifacts/$TM_VAULT_VERSION/vault-$TM_VAULT_VERSION.release /release-artifacts/vault-${TM_VAULT_VERSION}.release
 
 # Install AWS root certs
