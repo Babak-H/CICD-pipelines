@@ -1521,15 +1521,6 @@ buildAndDeployPythonMultiApp {
 
 
 
-
-kafka:topic_consumer_group_lag_by_service{app!="", kubernetes_namespace!=""}
-
-topk(2, kafka_consumergroup_lag{topic=~"vault.core.contracts.journeys.account_schedule.responses"})
-
-topk(2, kafka_consumergroup_lag{consumergroup="vault.core.accounts.account_event_processor", topic="vault.core.account.events"})
-
-
-
 kubectl get --raw "/apis/custom.metrics.k8s.io/v1beta1/namespaces/105250-core-vault/deployments.apps/vault-postings-account-postings-processor/max_service_consumer_group_lag"
 
 {"kind":"MetricValueList","apiVersion":"custom.metrics.k8s.io/v1beta1","metadata":{},"items":[{"describedObject":{"kind":"Deployment","namespace":"105250-core-vault","name":"vault-postings-account-postings-processor","apiVersion":"apps/v1"},"metricName":"max_service_consumer_group_lag","timestamp":"2024-02-27T16:21:55Z","value":"0","selector":null}]}
@@ -1537,8 +1528,6 @@ kubectl get --raw "/apis/custom.metrics.k8s.io/v1beta1/namespaces/105250-core-va
 kubectl get --raw "/apis/custom.metrics.k8s.io/v1beta1/namespaces/105250-core-vault/deployments.apps/vault-ledger-balances-distribution-processor/max_service_consumer_group_lag"
 
 {"kind":"MetricValueList","apiVersion":"custom.metrics.k8s.io/v1beta1","metadata":{},"items":[{"describedObject":{"kind":"Deployment","namespace":"105250-core-vault","name":"vault-ledger-balances-distribution-processor","apiVersion":"apps/v1"},"metricName":"max_service_consumer_group_lag","timestamp":"2024-02-27T16:25:17Z","value":"0","selector":null}]}
-
-
 
 
 > kubectl get pod -n 105250-kafka
@@ -1549,59 +1538,6 @@ kubectl get --raw "/apis/custom.metrics.k8s.io/v1beta1/namespaces/105250-core-va
 
 
 kubectl get kt -n 105250-core-vault
-
-
-
-after consulting with TM team, we figured that max_consumer_group_lag is already available either through kubernetes query or tm-metrics thanos, and for 3 deployments that the metric is not available (vault-payment-order-processor, contract-secondary-directives-committer, plan-schedule-executor) the lack of metrics is due to very low or non-existent traffic that they receive.
-
-
-
-sum by(kubernetes_namespace)(  increase(scheduler_job_publish_lag_seconds_count{kubernetes_cluster="$cluster", kubernetes_namespace=~"$kubernetes_namespace"}[2m]))
-
-
-sum by(kubernetes_namespace)(
-  increase(scheduler_job_publish_lag_seconds_count{kubernetes_cluster=~"dn-pcore-vault.*", kubernetes_namespace=~"105250-core-vault"}[$rate])
-)
-
-
-count(kube_pod_status_phase{phase="Running", kubernetes_cluster="dn-icore-vault.dynamo.eng.eu-west-1.aws.jpmchase.net"} == 1)
-
-count(kube_pod_status_phase{phase="Running"} == 1)
-
-sum(max without(instance)(kube_node_status_condition{kubernetes_cluster="$cluster", condition="Ready",status="true"})) / sum(max without(instance)(kube_node_status_condition{kubernetes_cluster="$cluster", condition="Ready"}))
-
-avg ( count by (label_failure_domain_beta_kubernetes_io_zone) (project:app:pod_zone{kubernetes_cluster="$cluster", namespace=~"$namespace"})) by (label_failure_domain_beta_kubernetes_io_zone)
-
-prometheus_tsdb_head_series()
-
-group by (topic) ({topic=~".*\\.(dlq|failures)$",k8scluster="dn-ncore-vault", namespace="105250-core-vault"})
-
-sum by(app)(100*rate(PostingsProcessor_StageBatchRejectionCounter{kubernetes_cluster="dn-ncore-vault.dynamo.test.eu-west-1.aws.jpmchase.net"}[10m]))/sum(rate(PostingsProcessor_BatchRequestCounter{ kubernetes_cluster=~"dn-ncore-vault.dynamo.test.eu-west-1.aws.jpmchase.net"}[10m])) by (app)
-
-
-sum(ALERTS{alertstate="firing"}) or vector(0)
-
-
-sum by (topic, group) (max without (instance) (kafka_burrow_partition_lag{group=~"vault.*|ep.*|scheduler.*|integration.*"}))
-sum by (topic, group) (delta(kafka_burrow_partition_lag{group=~"vault.*|ep.*|scheduler.*|integration.*"}[30m]))
-
-sum by (topic)(increase(kafka_burrow_topic_partition_offset{topic=~"^(scheduler|vault)(\\.[a-zA-Z0-9_]+)+(\\.dlq|\\.failures)$",icb_jpmorgan_com_squad="ICB_Ledgers", namespace="105250-core-vault"}[10m]))
-
-
-
-histogram_quantile(0.99, sum by (le, kubernetes_namespace, app) (rate(database_client_query_duration_seconds_bucket{project="vault",service!="vault-ledger-balances-watermark-processor"}[10m])))
-histogram_quantile(0.9, sum by (le, kubernetes_namespace, app) (rate(database_client_query_duration_seconds_bucket{project="vault",service!="vault-ledger-balances-watermark-processor"}[10m])))
-
-
-http_server_requests_seconds_bucket{app="borrow-fa-gateway", aws_account_name="ECORE", container="service", endpoint="http-actuator", env="uat", exception="DynamoClientException", instance="100.72.125.114:9090", job="105250-borrow/borrow-fa-gateway", k8scluster="dn-ecore", le="0.001048576", method="PUT", namespace="105250-borrow", outcome="CLIENT_ERROR", pod="borrow-fa-gateway-86dc4bcfdd-zhn5v", prometheus="monitoring/prometheus", prometheus_cluster="Dynamo-eu-west-1", prometheus_replica="prometheus-prometheus-0", region="eu-west-1", service="borrow-fa-gateway", status="404", uri="/api/v1/borrow/financial-assistance/gateway/customer/{customerId}/status/{statusId}", version="1.0.918"}
-
-
-http_client_requests_seconds_count{app="borrow-credit-card-graphql-service", aws_account_name="ECORE", client_name="borrow-collections-service.105250-borrow.svc.cluster.local", container="service", endpoint="http-actuator", env="uat", instance="100.72.125.197:9090", job="105250-borrow/borrow-credit-card-graphql-service-pod-monitor", k8scluster="dn-ecore", method="POST", namespace="105250-borrow", outcome="CLIENT_ERROR", pod="borrow-credit-card-graphql-service-5bb49769-v2pgx", prometheus="monitoring/prometheus", prometheus_cluster="Dynamo-eu-west-1", prometheus_replica="prometheus-prometheus-0", region="eu-west-1", service="borrow-credit-card-graphql-service", status="404", uri="/api/v1/borrow/collections/revolving-lines/{accountId}/auth-reinstatement", version="1.0.325"}
-
-http_client_requests_seconds_count{app="borrow-credit-card-graphql-service", aws_account_name="ECORE", client_name="borrow-collections-service.105250-borrow.svc.cluster.local", container="service", endpoint="http-actuator", env="uat", instance="100.72.125.197:9090", job="105250-borrow/borrow-credit-card-graphql-service-pod-monitor", k8scluster="dn-ecore", method="POST", namespace="105250-borrow", outcome="SERVER_ERROR", pod="borrow-credit-card-graphql-service-5bb49769-v2pgx", prometheus="monitoring/prometheus", prometheus_cluster="Dynamo-eu-west-1", prometheus_replica="prometheus-prometheus-0", region="eu-west-1", service="borrow-credit-card-graphql-service", status="500", uri="/api/v1/borrow/collections/revolving-lines/{accountId}/auth-reinstatement", version="1.0.325"}
-
-
-
 
 the issue was the the user we used to grant the execution of the function via postgres user, however that user was not the owner of pg_ls_waldir function and because of that the grant execution was failing.
 
