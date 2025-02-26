@@ -1,5 +1,4 @@
-#Set the code owners
-* @@"Dynamo core engineering"
+
 
 
 
