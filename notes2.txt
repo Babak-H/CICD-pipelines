@@ -82,29 +82,6 @@ done
 
 
 
-@Library(['dynamo-shared-lib', 'services-shared-lib'])
-def podTemplateYaml = libraryResource('maven-kaniko-jdk11-helm.yaml')
-
-buildAndDeploy {
-    kubernetesLabel = 'maven-kaniko-jdk17-helm'
-    kubernetesYaml = podTemplateYaml
-    gitProjectKey = 'SRE'
-    gitRepositoryName = 'icb-ledgers-vault-tools'
-    emailOnFailure = 'kamil.izdebski@jpmorgan.com'
-    projectSealId = '105250'
-    isRunSonarQube = true
-    isRunSsapScan = true
-    isRunSiCScan = true
-    isRunImageScan = true
-    isZipArchive = false
-    isSubmitJetEvents = true
-    revision = 1.0
-    useCoverageTool = true
-    isSubmitJetEvents = true
-    isRunSonarQube = false
-}
-
-
 kubectl patch -n kube-system daemonset/istio-cni-node --type json -p='[{"op": "remove", "path": "/spec/template/spec/containers/0/resources/limits/cpu"}]' || true
       # DYN-610676
       kubectl patch -n kube-system clusterrole/istio-cni --type json -p='[{"op": "add", "path": "/rules/0/verbs", "value": ["get", "list", "watch", "delete"]}]'
@@ -112,77 +89,8 @@ kubectl patch -n kube-system daemonset/istio-cni-node --type json -p='[{"op": "r
 
 
 
-
-
-python3 -m pipenv install -r requirements.txt -i https://artifactory.dyn.prd.aws.jpmchase.net/artifactory/api/pypi/pypidev/simple/
-python3 -m pipenv install -r requirements.txt   
-
-
-
 kubectl get --raw "/apis/custom.metrics.k8s.io/v1beta1/namespaces/105250-core-vault/deployments.apps/vault-postings-account-postings-processor/max_service_consumer_group_lag"{"kind":"MetricValueList","apiVersion":"custom.metrics.k8s.io/v1beta1","metadata":{},"items":[{"describedObject":{"kind":"Deployment","namespace":"105250-core-vault","name":"vault-postings-account-postings-processor","apiVersion":"apps/v1"},"metricName":"max_service_consumer_group_lag","timestamp":"2024-02-27T16:21:55Z","value":"0","selector":null}]}
 
-
-
-# https://python-poetry.org/docs/pyproject/
-
-# pyproject.toml
-[tool.poetry]
-name = "prophecy"
-version = "0.1.0"
-description = ""
-authors = ["Michele Castellana <michele.castellana@jpmorgan.com>", "Emilio Guazzotti <emilio.guazzotti@jpmorgan.com>", "Kevin Tan <jiahui.tan@jpmorgan.com>"]
-readme = "README.md"
-
-[tool.poetry.dependencies]
-python = "^3.10.0,<3.11"
-chasedb = "^0.3.1"
-plotly = "^5.19.0"
-sktime = "^0.17.1"
-lightgbm = "^4.3.0"
-mlforecast = "^0.9.2"
-prophet = "^1.1.5"
-pyspark = "^3.5.1"
-pyyaml = "^6.0.1"
-ipykernel = "^6.9.2"
-nbformat = "^5.9.2"
-tbats = "^1.1.3"
-
-
-[[tool.poetry.source]]
-name = "chase"
-url = "https://artifactory.dyn.prd.aws.jpmchase.net/artifactory/api/pypi/pypidev/simple/"
-priority = "primary"
-
-
-[tool.poetry.group.dev.dependencies]
-isort = "^5.13.2"
-black = "^24.2.0"
-pytest = "^8.1.1"
-mypy = "^1.9.0"
-flake8 = "^7.0.0"
-
-[build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
-
-
-
-# poetry.lock
-
-poetry init
-poetry install
-if LGBM ninja error, remove lgbm from pyproject.toml and use:
-
-pip install \
-   --no-binary lightgbm \
-   --config-settings=cmake.define.USE_OPENMP=OFF \
-   'lightgbm>=4.2.0'
-then add it back into pyproject.toml
-
-When installing requirements with pip (may not work). Use the following directory:
-pip install -r requirements.txt -i https://artifactory.dyn.prd.aws.jpmchase.net/artifactory/api/pypi/pypidev/simple/
-If SSL Issue
-python3 -m certifi and copy path
 
 import os
 
