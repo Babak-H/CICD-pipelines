@@ -8,16 +8,6 @@ Switch to remote branch on local
 > git branch -v -a
 > git switch -c test origin/test
 
-How to access Kubernetes cluster from Terminal:
-> pcl aws -s 
-> enter Password
-> enter RSA
-> press “s” then space and then type name of environment to search it. (Press enter to find)
-> aws eks update-kubeconfig --name dn-dcore-vault --region eu-west-1
-> kubectl get ns
-> kubectl get deployment contract-post-posting-processor -n 105250-core-vault
-> kubectl get configmap contract-post-posting-processor-config-contracts-pkg-69fd415127 -n 105250-core-vault -o yaml
-
 describe cluster:
 aws eks --region us-east-1 describe-cluster --name <CLUSTER_NAME> --query cluster.status
 
