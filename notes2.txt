@@ -92,42 +92,6 @@ kubectl patch -n kube-system daemonset/istio-cni-node --type json -p='[{"op": "r
 kubectl get --raw "/apis/custom.metrics.k8s.io/v1beta1/namespaces/105250-core-vault/deployments.apps/vault-postings-account-postings-processor/max_service_consumer_group_lag"{"kind":"MetricValueList","apiVersion":"custom.metrics.k8s.io/v1beta1","metadata":{},"items":[{"describedObject":{"kind":"Deployment","namespace":"105250-core-vault","name":"vault-postings-account-postings-processor","apiVersion":"apps/v1"},"metricName":"max_service_consumer_group_lag","timestamp":"2024-02-27T16:21:55Z","value":"0","selector":null}]}
 
 
-import os
-
-os.environ["SSL_CERT_FILE"]="<paste_path>"
-
-
-
-
-# I have a docker container that does not contain vim or nano for editing files. how can I create a shell file inside it and add a small 10 line script to that file? after executing that file I will need to edit it and add another 3 lines to the end of the file
-If your Docker container doesn't have vim or nano for editing files, you can still create and edit files using basic shell commands like echo, cat, and printf. Here's how you can create a shell script, add content to it, and then modify it:
-
-Create a Shell Script and Add Initial Content:
-
-You can use cat with a here-document to create a file and add multiple lines to it. For example, to create a file named script.sh with 10 lines:
-
-cat << 'EOF' > script.sh
-#!/bin/bash
-echo "Line 1"
-echo "Line 2"
-echo "Line 3"
-echo "Line 4"
-echo "Line 5"
-echo "Line 6"
-echo "Line 7"
-echo "Line 8"
-echo "Line 9"
-echo "Line 10"
-EOF
-
-chmod +x script.sh
-
-echo 'echo "Line 11"' >> script.sh
-echo 'echo "Line 12"' >> script.sh
-echo 'echo "Line 13"' >> script.sh
-
-
-
 kubectl cp ./script.sh  -n 105250-vault-operators vault-operator-tqdcf:/tmp/ -c  installer-prerequisite-configuration-container
 
 kubectl exec -it -n 105250-core-hault hault-restore-0 -c cockroach-cert-copy -- sh
