@@ -421,10 +421,6 @@ DROP USER test_user;
 
 
 
-
-
-
-
 "postgres://YourUserName:YourPassword@YourHostname:5432/YourDatabaseName"
 postgresql://[user[:password]@][netloc][:port][/dbname][?param1=value1&...]
 postgres://postgress:PASS@db-105250-000ie-dcore-tnn-core-vault-cluster:5432
@@ -506,9 +502,6 @@ The path/report name are defined in "buildAndDeployPython", in the "COVERAGE_XML
 Warnings:
 A new pipeline parameter "covergaeToolSourceDir" was created serving the same purpose as "coverageToolProject" while being more informative. To accommodate legacy projects, "coverageToolProject" has been kept in buildAndDeployPython for now. It is highly encouraged to use the new parameter for any new projects and replace it for the already existing projects.
 Previously, buildAndDeployPython used a default value for "coverageToolSourceDir" setting it to "tests". By setting the parameter to point to the test folder, the coverage will be reported for the test files, resulting in a 0% coverage reported in SonarQube. The parameter's default value has been changed to a more appropiate value: "src". Projects having their source file directory named "src" can skip setting up the "coverageToolSourceDir" field in the Jenkinsfile.
-
-
-
 
 
 A. Spinnaker pipeline spinnaker-for-core-hault
@@ -1278,11 +1271,6 @@ Sample project with pipeline setup guidance
 To add post implementation
 
 
-
-
-
-
-
 This document details the Minimum Acceptance Criteria to ensure adequate and detailed documentation is included in ServiceNow Change Records.
 
 Scope
@@ -1495,9 +1483,6 @@ kubectl exec -it -n 105250-vault-operators vault-tools-7bb8b958f7-l2k5l -- shpyt
 kubectl get deployment -n 105250-core-vault-mon | grep promkubectl scale deployment prometheus-operator-105250-core-vault -n 105250-core-vault-mon --replicas=0kubectl scale statefulset prometheus-postgres -n 105250-core-vault --replicas=0kubectl get pvc -n 105250-core-vault | grep prometheus-postgreskubectl delete pvc -n 105250-core-vault prometheus-postgres-db-prometheus-postgres-0, prometheus-postgres-db-prometheus-postgres-1, prometheus-postgres-db-prometheus-postgres-2kubectl scale deployment prometheus-operator-105250-core-vault -n 105250-core-vault-mon --replicas=1
 
 
-
-
-
 there was another issue that was fixed: "pg_stat_statements.total_exec_time does not exist"
 
 by running this command:
@@ -1510,9 +1495,6 @@ CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
 based on responses from TM, we either have to add specific permissions to users to access this function or using the option on postgres to minimize the "wal_level" however this changes might cause some other issues that TM will not support or be responsible for if they happen.
 
 other option is upgrading to Vault version 5.2.7 which contains the fix to this issue. this seems to be the best option in our case.
-
-
-
 
 
 #!/usr/bin/env bash
