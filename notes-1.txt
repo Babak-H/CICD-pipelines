@@ -779,83 +779,6 @@ RUN chmod -R 755 /opt/app
 USER 999
 WORKDIR /opt/app/soteria
 
-def parse_yaml_file(yaml_file_path):
-    with open(yaml_file_path, "r") as yaml_file:
-        yaml_data = yaml.safe_load(yaml_file)
-    return yaml_data
-
-
-def create_or_clean_screenshot_folder(folder):
-    try:
-        os.mkdir(folder)
-    except FileExistsError:
-        folder_cleanup(folder)
-        LOGGER.debug(f"Target folder already exist {folder}")
-
-
-def folder_cleanup(folder):
-    for filename in os.listdir(folder):
-        file_path = os.path.join(folder, filename)
-        try:
-            if os.path.isfile(file_path) or os.path.islink(file_path):
-                os.unlink(file_path)
-            elif os.path.isdir(file_path):
-                shutil.rmtree(file_path)
-        except Exception as e:
-            LOGGER.debug("Failed to delete %s. Reason: %s" % (file_path, e))
-
-
-def check_if_file_exist(path):
-    if not os.path.exists(path):
-        LOGGER.critical(
-            f"File {path} not exists, please check documentation and creat."
-        )
-        exit()
-
-
-def write_config_file(CONFIG_FILE_PATH, parameter, value):
-    try:
-        with open(CONFIG_FILE_PATH, "r+") as file:
-            config = json.load(file)
-            config[parameter] = value
-            file.seek(0)
-            json.dump(config, file, indent=4)
-            file.truncate()
-            LOGGER.debug(f"Writing {parameter} to {CONFIG_FILE_PATH}")
-    except FileNotFoundError:
-        with open(CONFIG_FILE_PATH, "w") as file:
-            json.dump({parameter: value}, file, indent=4)
-            LOGGER.debug(f"Created {CONFIG_FILE_PATH} and writing {parameter}")
-
-
-# Function to read a parameter's value from the config file
-def read_config_file(CONFIG_FILE_PATH, parameter):
-    try:
-        with open(CONFIG_FILE_PATH, "r") as file:
-            config = json.load(file)
-            LOGGER.debug(f"Parameter {parameter} read from {CONFIG_FILE_PATH}")
-            return config.get(parameter)
-    except FileNotFoundError:
-        LOGGER.info(f"Config file {CONFIG_FILE_PATH} not found")
-        return None
-
-
-def url_environment_replacer(url: str, link: str) -> str:
-    if "environment" in url:
-        try:
-            LOGGER.debug(
-                f"Replaced healthcheck environment in link {url}, by target {link}"
-            )
-            url = re.sub(r"environment", link, url)
-        except KeyError as e:
-            LOGGER.warning(
-                f"Unknown url:link mapping {e}. Please check {url} and mapping in consts.py"
-            )
-    LOGGER.warning(
-        f"Cannot find environment in link, please check configs, fallback to provided link {url}"
-    )
-    return url
-
 
 def transform_time(time_stamp, structure="short"):
     time_stamp = int(time_stamp) / 1000
@@ -893,6 +816,8 @@ def get_secret(secret_name, region_name):
         # For a list of exceptions thrown, see
         # https://docs.aws.amazon.com/secretsmanager/latest/apireference/API_GetSecretValue.html
         raise e
+
+
 
 
 
