@@ -779,26 +779,6 @@ RUN chmod -R 755 /opt/app
 USER 999
 WORKDIR /opt/app/soteria
 
-import json
-import logging
-import os
-import re
-import shutil
-from datetime import datetime, timezone
-from logging import getLogger
-
-import botocore
-import botocore.session
-import yaml
-from aws_secretsmanager_caching import SecretCache, SecretCacheConfig
-from botocore.exceptions import ClientError
-
-from src.api.selenium_client import Selenium
-
-LOGGER = getLogger(__name__)
-SECRET_DATA = None
-
-
 def parse_yaml_file(yaml_file_path):
     with open(yaml_file_path, "r") as yaml_file:
         yaml_data = yaml.safe_load(yaml_file)
@@ -823,16 +803,6 @@ def folder_cleanup(folder):
                 shutil.rmtree(file_path)
         except Exception as e:
             LOGGER.debug("Failed to delete %s. Reason: %s" % (file_path, e))
-
-
-async def get_other_screenshots(url, health_check):
-    try:
-        with Selenium(base_url=f"{url}") as gs:
-            for hc in health_check.values():
-                gs.get_screenshot(hc, (url + hc).replace("/", "-"))
-    except Exception as e:
-        LOGGER.critical(f"Screenshot Capturing Failed, Error: {e}")
-        raise e
 
 
 def check_if_file_exist(path):
@@ -925,23 +895,7 @@ def get_secret(secret_name, region_name):
         raise e
 
 
-def kill_selenium_processes(process):
-    proc_dir = "/proc"
-    LOGGER.debug(f"Attempt to kill selenium PID name {process}")
-    for pid_dir in os.listdir(proc_dir):
-        if pid_dir.isdigit():
-            cmdline_path = os.path.join(proc_dir, pid_dir, "cmdline")
-            try:
-                if os.path.isfile(cmdline_path):
-                    with open(cmdline_path) as f:
-                        cmdline = f.read()
-                        if process in cmdline:
-                            os.kill(int(pid_dir), 9)
-                            LOGGER.info(
-                                f"Killed process {pid_dir} with cmdline containing {process}"
-                            )
-            except Exception as e:
-                LOGGER.error(f"Error processing PID {pid_dir}: {e}")
+
 
 
 
