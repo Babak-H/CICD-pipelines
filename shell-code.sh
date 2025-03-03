@@ -1,9 +1,3 @@
-5. kubectl cp -n 105250-vault-operators crown-operator-XXXXX:/var/run/secrets/kubernetes.io/serviceaccount/..data/ca.crt  ./cert_vault-operator-sa : copy the certificate locally from crown operator
-7. kubectl cp cert_vault-operator-sa -n 105250-core-hault hault-0:/tmp/cert_vault-operator-sa -c vault  : copy cert to hashicorp vault pod
-10. kubectl cluster-info : find what ip address the kubernetes master is running at
-
-
-
 #!/bin/bash
 
 set -e
@@ -84,11 +78,8 @@ fi
 
 
 """
-How to Use:
-1. go to "105250-vault-operators" namespace and shell into "vault-tools-..." pod
-2. go to /scripts folder
-3. execute: python3 pgLsWaldirRoleGrant.py --db="db-105250-0000ie-dcore-tnn-core-vault-cluster"
 
+3. execute: python3 pgLsWaldirRoleGrant.py --db="db-105250-0000ie-dcore-tnn-core-vault-cluster"
 this script will remove pg_monitor role (if it was added before), alter postgres user so that it can allow other
 database users to execute pg_ls_waldir function.
 """
