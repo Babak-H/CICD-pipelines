@@ -732,19 +732,6 @@ GRANT EXECUTE ON FUNCTION pg_read_binary_file(text) TO someuser;
 scheduler@scheduler:[30512]:ERROR: permission denied for function pg_ls_waldir
 
 
-FROM dockerdev.artifactory.dyn.prd.aws.jpmchase.net/container-external/docker.external.thoughtmachine.io/vault/installer/operators/crown-operator@sha256:d0ef181b3888c895a11d638b258d2c7ead92dea009c871bc0447108b4dc07301
-ENV NO_PROXY="sts.eu-west-1.amazonaws.com,.svc,svc.cluster.local,0.0.0.0/0"
-ENV HTTPS_PROXY="http://proxy.jpmchase.net:10443"
-ENV HTTP_PROXY="http://proxy.jpmchase.net:10443"
-ENV PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/deployment-tools"
-
-USER root
-SHELL ["sh", "-c"]
-COPY JPMCROOTCA.pem /usr/local/share/ca-certificates/JPMCROOTCA.crt
-RUN update-ca-certificates || true
-USER tm-app
-
-
 FROM dockerprod.artifactory.dyn.prd.aws.jpmchase.net/container-base/managedbaseimages/python:3.10.7-stable AS base
 # Setup env
 ENV LANG C.UTF-8
@@ -2113,71 +2100,6 @@ namespace: 105250-core-vault
 
 clusterName: dn-ncore-vault
 CAEnvLevelDNS: dynamo.test.eu-west-1.aws.jpmchase.net
-
-
-
-FROM dockerprod.artifactory.dyn.prd.aws.jpmchase.net/container-base/managedbaseimages/lrh9/python:3.10-stable
-
-ARG TM_VAULT_VERSION="4.6.33"
-
-RUN set -eux;
-ENV PG_VERSION=15
-ENV PGHOME=/var/lib/pgsql
-ENV PGDATA=${PGHOME}/${PG_VERSION}/data
-
-RUN microdnf module enable postgresql:${PG_VERSION} -y && microdnf install \
-    tar  \
-    gzip  \
-    libicu  \
-    perl  \
-    libxslt  \
-    jq  \
-    vim \
-    nano \
-    shadow-utils  \
-    awscli \
-    diffutils \
-    postgresql \
-    openssl \
-    bind-utils \
-    traceroute \
-    nc \
-    net-tools \
-    -y \
-    && microdnf clean all
-
-# Install Pipenv and Install used python packages
-
-COPY Pipfile* .
-RUN pip3 install pipenv \
-    && pipenv install --system --deploy \
-    && pip3 uninstall pipenv --yes \
-    && rm -rf Pipfile*
-
-VOLUME /var/run/postgresql
-
-COPY ./release-artifacts/$TM_VAULT_VERSION/vaultctl /release-artifacts/vaultctl
-COPY ./release-artifacts/$TM_VAULT_VERSION/release.json /release-artifacts/release.json
-
-COPY ./release-artifacts/$TM_VAULT_VERSION/vault-$TM_VAULT_VERSION.release /release-artifacts/vault-${TM_VAULT_VERSION}.release
-
-# Install AWS root certs
-COPY resources/root.crt ${PGHOME}/.postgresql/root.crt
-COPY resources/kubectl /sbin/kubectl
-RUN chmod +x /sbin/kubectl
-COPY resources/wait.sh /
-COPY scripts /scripts
-RUN chmod +x wait.sh
-RUN chmod -R +x /scripts
-# Finish up.
-
-USER 999
-EXPOSE 5432
-
-ENTRYPOINT ["/wait.sh"]
-
-
-
 
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
