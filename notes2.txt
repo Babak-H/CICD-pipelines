@@ -1,22 +1,3 @@
-kubectl patch -n kube-system daemonset/istio-cni-node --type json -p='[{"op": "remove", "path": "/spec/template/spec/containers/0/resources/limits/cpu"}]' || true
-      # DYN-610676
-      kubectl patch -n kube-system clusterrole/istio-cni --type json -p='[{"op": "add", "path": "/rules/0/verbs", "value": ["get", "list", "watch", "delete"]}]'
-      kubectl set env -n kube-system daemonset/istio-cni-node REPAIR_DELETE_PODS="true" REPAIR_REPAIR_PODS="false"
-
-
-
-kubectl get --raw "/apis/custom.metrics.k8s.io/v1beta1/namespaces/105250-core-vault/deployments.apps/vault-postings-account-postings-processor/max_service_consumer_group_lag"{"kind":"MetricValueList","apiVersion":"custom.metrics.k8s.io/v1beta1","metadata":{},"items":[{"describedObject":{"kind":"Deployment","namespace":"105250-core-vault","name":"vault-postings-account-postings-processor","apiVersion":"apps/v1"},"metricName":"max_service_consumer_group_lag","timestamp":"2024-02-27T16:21:55Z","value":"0","selector":null}]}
-
-
-kubectl cp ./script.sh  -n 105250-vault-operators vault-operator-tqdcf:/tmp/ -c  installer-prerequisite-configuration-container
-
-kubectl exec -it -n 105250-core-hault hault-restore-0 -c cockroach-cert-copy -- sh
-
-
-kubectl exec -it cockroach-client-0 -n 105250-cockroach-sql-client -- ./cockroach sql --certs-dir=cockroach-certs-copy --user=cockroach_client --url=postgresql://cockroach-public
-
-
-Created by Ruben Verboon, last modified by Alex Radoi on Sep 13, 2021
 This article describes the steps you need to take to enable SSL for Kafka clients. This is written to be implemented in Spring micro-services, but could also serve as a guide for other Kafka related applications.
 
 For Kafka we have decided that we use mTLS, that means that both the server and the client hold a certificate that is signed by the CA. On establishing the connection, both the broker checks the client certificate, and the client checks the broker certificate. The checking is done by checking whether the certificate is signed by a CA that we have in the trust-store. On the client side, we also check that the bootstrapserver address is in the SAN part of the certificate.
