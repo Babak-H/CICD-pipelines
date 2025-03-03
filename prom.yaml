@@ -1,32 +1,3 @@
-count by (namespace)(sum by (namespace,pod,container)(kube_pod_container_resource_limits{resource="cpu"}))  : total number of pods in each namespace that have cpu limiys
-
-count by (namespace)(sum by (namespace,pod,container)(kube_pod_container_info{container!=""}) unless sum by (namespace,pod,container)(kube_pod_container_resource_limits{resource="cpu"}))  : Find the number of containers without CPU limits in each namespace
-
-kube_persistentvolumeclaim_status_phase{phase="Pending"}  : Find PersistentVolumeClaim in the pending state
-
-count by (namespace)(kube_persistentvolumeclaim_status_phase{phase="Pending"})  : count them in each namespace
-
-sum(changes(kube_node_status_condition{status="true",condition="Ready"}[15m])) by (node) > 2  : find nodes that are intermittently switching between “Ready" and “NotReady" status continuously over 15 minutes
-
-sum((container_memory_usage_bytes{container!="POD",container!=""} - on (namespace,pod,container) avg by (namespace,pod,container)(kube_pod_container_resource_requests{resource="memory"})) * -1 >0 ) / (1024*1024*1024)  : Find idle memory
-
-avg(container_memory_working_set_bytes{container!="POD",container!=""}) by (namespace)  : averge memory usage by pods in each namespace
-
-sum(kube_node_status_condition{condition="Ready",status="true"})  : find number of nodes that are ready
-
-node_filefd_allocated{k8scluster="my-cluster"}  : fetch the number of allocated file descriptors for a specific Kubernetes cluster named "my-cluster".
-
-node_filefd_allocated  : This is a metric exposed by the Node Exporter, a Prometheus exporter for hardware and OS metrics. It represents the number of file descriptors currently allocated by the system
-
-
-target => an object to scrape
-
-instance => an endpoint you can scrape, 1.2.3.4:5670
-
-job => a collection of targets/instances
-
-
-
 Teams can monitor Kafka consumer lag with the consumer group script, Burrow (a Kafka monitoring companion), or generic monitoring tools and exporters:
 
       group by (app, topic, kubernetes_namespace, consumer_group)
