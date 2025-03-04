@@ -180,10 +180,6 @@ You can use readonly bastion to get reosurses, But still cannot describe, exec
 get current aws user configured in aws cli:
 aws sts get-caller-identity
 
-
-kafka polling => Polling involves making repeated requests to a server to check for updates. However, traditional polling can be inefficient and “chatty,” leading to increased bandwidth usage. This is where long polling comes into play. Instead of the server immediately responding with a “not ready” message, it delays the response, allowing the client to check back later.
-In Kafka, long polling is instrumental for clients subscribing to topics. The consumer sends a request to check for messages in a topic, and if none are found, Kafka holds the response until new messages arrive. This ensures that clients receive updates without continuously polling the server.1
-
 install metric server: 
 helm repo add metrics-server https://kubernetes-sigs.github.io/metrics-server/
 helm upgrade --install metrics-server metrics-server/metrics-server
@@ -340,19 +336,7 @@ k logs deploy/otel-collector -n 105250-core-vault
 k get po -n 105250-core-vault | grep otel
 k get cm otel-gateway-conf-fdg7dt2f9d-namespaced-observability-c547c3d65f -n 105250-core-vault -o yaml
 
-**********************
-exec inside a deployment (chooses a random pod from the deployment):
-  kubectl exec -it deploy/core-kafka-toolkit -n 105250-kafka -- bash
-
 *************
-
-The metric "kafka_server_brokertopicmetrics_fetchfromfollowerfetchrequestspersec" refers to the rate of fetch requests per second that are being served by follower replicas in a Kafka cluster. => kafka server, broker topic metrics, fetch from follower, fetch request per sec
-
-
-ALERTS{alertname="NewMessagesInMigratedPostingsBridgeDLQ", alertstate="firing", topic="vault.api.v1.postings.posting_instruction_batch.created.migrated_postings_bridge.dlq"}
-
-*****************
-
 Enabling debug logs is done by appending --verbosity=debug to the command of the main container in the deployment k8s yaml:
        ■ kubectl edit deployment vault-ledger-balances-distribution-processor
        ■ add - --verbosity=debug under spec.template.spec.containers[0].command:
