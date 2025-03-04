@@ -1,8 +1,5 @@
 babak.habibnejadgohardani@jpmorgan.com
 D645581
-MoeMoe1990!1369!
-
-tail /var/log/messages
 
 Switch to remote branch on local
 > git branch -v -a
@@ -185,66 +182,8 @@ execute the "aws eks get-token" command to obtain an authentication token for th
 we don't have access to most of the action verbs in k8s in PCORE, you still have access to the AWS console
 You can use readonly bastion to get reosurses, But still cannot describe, exec
 
-
-
-Kafka:
-
-> kafka-acls --bootstrap-server $BOOTSTRAP_SERVER:9092 --command-config ~/connect.properties --add --resource-pattern-type prefixed --allow-host '*' --allow-principal User:vault-operator --topic "scheduler." --operation Describe --operation Read --operation Write
-
-The command you've provided is using the "kafka-acls" tool to manage Access Control Lists (ACLs) in Kafka. Here's what each part of the command is doing:
-* kafka-acls: This is the Kafka Authorization management CLI used for managing ACLs
-* --bootstrap-server $BOOTSTRAP_SERVER:9092: This specifies the address of the Kafka broker to connect to
-* --command-config ~/connect.properties: This points to a properties file that contains the configuration settings for the command
-* --add: This flag indicates that you are adding a new ACL
-* --resource-pattern-type prefixed: This specifies that the resource pattern will be treated as a prefix, meaning it will match any resource that starts with the given pattern
-* --allow-host '*': This allows access from any host
-* --allow-principal User:vault-operator: This specifies the principal (user or application) that is being granted access
-* --topic "scheduler.": This is the prefix of the topic names that the ACL will apply to
-* --operation Describe --operation Read --operation Write: These specify the operations that the principal is allowed to perform on the resources. In this case, the principal can describe, read, and write to resources that match the prefix "scheduler."
-
-=> the command is adding an ACL that allows the user" vault-operator" to describe, read, and write to any topic that starts with the prefix "scheduler." from any host.
-Rewrite
-
-
-kafka command to list all users:
-> kafka-acls --bootstrap-server $BOOTSTRAP_SERVER:9092 --command-config ~/connect.properties --list --principal User:<principal-name>
-
-Check if principal user has access to topics
-> kafka-acls --bootstrap-server $BOOTSTRAP_SERVER:9092 --command-config ~/connect.properties --list --principal User:<principal-name> --topic <topic-name>
-
-Access hashicorp vault secret on hault namespace:
-> export K8T=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
-
-export VTOKEN=$(curl -k -s --request POST --data '{"jwt": "'$K8T'", "role": "vault-operator-role"}' https://hault.105250-core-hault.svc.cluster.local:8200/v1/auth/kubernetes/login | jq -r '.auth.client_token')
-> curl -k -s -X GET -H "X-Vault-Token:$VTOKEN" https://hault.105250-core-hault.svc.cluster.local:8200/v1/secret/dev/root-db-secrets
-
-accessing kafka-toolkit:
-
-> kubectl get pod -n 105250-kafka 
-> kubectl get pod core-kafka-toolkit-85f44bdd68-jqxc9 -n 105250-kafka 
-> kubectl exec -it core-kafka-toolkit-85f44bdd68-jqxc9 -n 105250-kafka -- bash 
-> ktl | grep vault.dummy.cg.placeholder 
-> ktl | grep vault.core_api.v1.accounts.account_schedule_job_execution_failure
-
-in each environment we have core-kafka-toolkit pod running inside "105250-kafka" namespace, inside it we can run kafka cli commands directly. 
-ktl is same as ./bin/kafka-topics.sh -bootstrapserver=      -list and lists all existing topics
-
-topic-from-crd file contains topics that are available from running 
-> kubectl get kt -n 105250-core-vault
-
-Terraform update model: 0.11 => 0.13 => 1.0.7
-Back up => run again on backup branch to re-create old infra
-
 get current aws user configured in aws cli:
-> aws sts get-caller-identity
-
-
-kubectl get --raw "/apis/custom.metrics.k8s.io/v1beta1/namespaces/<VAULT_NS>/deployments.apps/<DEPLOYMENT_NAME>/max_service_consumer_group_lag" | jq
-
-kubectl get --raw "/apis/custom.metrics.k8s.io/v1beta1"
-
-
-kafka-acls --bootstrap-server $BOOTSTRAP_SERVER:9092 --command-config ~/connect.properties --list --topic __consumer_offsets
+aws sts get-caller-identity
 
 
 kafka polling => Polling involves making repeated requests to a server to check for updates. However, traditional polling can be inefficient and “chatty,” leading to increased bandwidth usage. This is where long polling comes into play. Instead of the server immediately responding with a “not ready” message, it delays the response, allowing the client to check back later.
@@ -267,24 +206,7 @@ Choose your cluster
 Poke around OpenLens.
 
 
-    provider "aws" {
-      version = "~> 2.70.0"
-      region = "${var.region}"
 
-      /*
-      In the provided Terraform AWS provider configuration code, assume_role is used to specify the details for assuming an AWS Identity and Access Management (IAM) role.
-       This is a way to obtain temporary security credentials that allow the Terraform provider to make AWS API calls with the permissions granted to the assumed role.
-       This is particularly useful for cross-account access, where you might need to manage resources in a different AWS account than the one your Terraform provider is
-       configured to use by default.
-      The assume_role block within the AWS provider configuration includes:
-
-      role_arn: This specifies the Amazon Resource Name (ARN) of the IAM role to assume. The ARN uniquely identifies the role across AWS. This is a required parameter
-      for assuming a role.
-      */
-      assume_role {
-        role_arn = "${var.assume_role}"
-      }
-    }
 
 
 
@@ -309,12 +231,8 @@ Poke around OpenLens.
             "Resource": "*"
         }
 
-
-
 creating CloudTrail: AccessDeniedException: User: arn:aws:sts::279924677952:assumed-role/105250-EMEA-DCORE-INFRADEPLOYER/aws-go-sdk-1710163813771163623 is not authorized to perform: cloudtrail:CreateTrail on resource: arn:aws:cloudtrail:eu-west-1:279924677952:trail/aurora-cloudtrail because no identity-based policy allows the cloudtrail:CreateTrail action
 │ 	status code: 400, request id: e26237fb-1141-448f-ae79-d07a9c8b0c30
-
-
 
 data "aws_iam_policy_document" "aurora_kms_policy" {
   statement {
@@ -422,9 +340,6 @@ DROP USER test_user;
 "postgres://YourUserName:YourPassword@YourHostname:5432/YourDatabaseName"
 postgresql://[user[:password]@][netloc][:port][/dbname][?param1=value1&...]
 postgres://postgress:PASS@db-105250-000ie-dcore-tnn-core-vault-cluster:5432
-
-
-python3 blue-green-replication.py --blue-db="db-105250-0000ie-icore-tnn-core-vault-cluster" --green-db="db-105250-0000ie-icore-tnn-core-vault-cluster" --mode=grant_pg_monitor
 
 
 
