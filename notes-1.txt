@@ -526,39 +526,8 @@ args:
     "Resource": ["arn:aws:secretsmanager:eu-west-1:${var.account_id}:secret:${var.seal_id}-${var.deployment_id}-${lower(var.environment)}-vault-monitoring-*"]
 }
 
-=========================================
-kafka:
-  panels:
-    - name: fa_capquest_scod_updates_kafka_takes_too_long
-      type: lag
-      queries:
-        - consumergroup: borrow-fa-gateway
-          topics: 10x.tokenized.client-individual-customer-event-v001-002
-          threshold: 0
-          agg_function: min()
-          agg_window: 5m
-      alert:
-        severity: MINOR
-        for: 20m
-        message: Consumer lag for tenx customer event topic in borrow-fa-gateway has been increasing for 20 minutes - fa-gateway is taking too long to process TenX events - customer details updates are not being sent over to Capquest in a timely manner
-    - name: fa_capquest_pdd_updates_kafka_failure
-      type: lag
-      queries:
-        - consumergroup: borrow-fa-gateway
-          topics: chase.borrow.fa-gateway.client-individual-customer-event-v001.triage
-          threshold: 0
-          agg_function: min()
-          agg_window: 15m
-      alert:
-        severity: MINOR
-        for: 1m
-        message: the consumer lag on this topic has been > 0 for the last 15 minutes - this means this event has now landed on the triage topic which has been blocked for 15 minutes - this indicates that a customer details update has failed to be sent over to Capquest in a timely manner
-  global_tags:    
-    grafana_notification_channel: Borrow-Collections-Squad
-    customer_journey: BORROW-126
 
-
-
+======================================================================
 arn:aws:sts::987705244904:assumed-role/105250-0000ie-dinfrc-vault-tools-role/botocore-session-1737725512  
 s3:GetObject on resource: "arn:aws:s3:::105250-0000ie-dinfrc-hault-unseal-keys/'vault-test-old" with an explicit deny in a resource-based policy
 
