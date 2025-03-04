@@ -1344,15 +1344,6 @@ kubectl get --raw "/apis/custom.metrics.k8s.io/v1beta1/namespaces/105250-core-va
 {"kind":"MetricValueList","apiVersion":"custom.metrics.k8s.io/v1beta1","metadata":{},"items":[{"describedObject":{"kind":"Deployment","namespace":"105250-core-vault","name":"vault-ledger-balances-distribution-processor","apiVersion":"apps/v1"},"metricName":"max_service_consumer_group_lag","timestamp":"2024-02-27T16:25:17Z","value":"0","selector":null}]}
 
 
-> kubectl get pod -n 105250-kafka
-> kubectl get pod core-kafka-toolkit-85f44bdd68-jqxc9 -n 105250-kafka
-> kubectl exec -it core-kafka-toolkit-85f44bdd68-jqxc9 -n 105250-kafka -- bash
-> ktl | grep vault.dummy.cg.placeholder
-> ktl | grep vault.core_api.v1.accounts.account_schedule_job_execution_failure
-
-
-kubectl get kt -n 105250-core-vault
-
 the issue was the the user we used to grant the execution of the function via postgres user, however that user was not the owner of pg_ls_waldir function and because of that the grant execution was failing.
 
 after we altered the ownership to add postgres as user, the issue was fixed and we managed to grant access to this function and fix the errors.
@@ -1408,40 +1399,3 @@ CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
 based on responses from TM, we either have to add specific permissions to users to access this function or using the option on postgres to minimize the "wal_level" however this changes might cause some other issues that TM will not support or be responsible for if they happen.
 
 other option is upgrading to Vault version 5.2.7 which contains the fix to this issue. this seems to be the best option in our case.
-
-
-#!/usr/bin/env bash
-
-REPOSTING_URL="https://core-api.dn-${DYN_ENV}-vault.dynamo.${DYN_ENV_TYPE}.eu-west-1.aws.jpmchase.net/v1/post-posting-failures"
-REPOSTING_TOKEN=$(aws secretsmanager get-secret-value --secret-id 105250-0000ie-${DYN_ENV}-sa-reposting-vault-tools-tennessee-token | jq -r '.SecretString' | jq -r ".token1")
-
-function usage_reposting() {
-  echo "Usage: $0 [-a accountId -f failuresFile]"
-  echo " -a: Filtering account_id [optional]"
-  echo " -f: Failures file to reposting [optional]"
-  echo " -r: Filtering reason [optional]"
-  echo " -h: help"
-  exit 1
-}
-
-while getopts a:f:r:h flag
-do
-  case "${flag}" in
-    a) ACCOUNT_ID_REPOSTING_ARG=${OPTARG};;
-    f) FAILURES_FILE_REPOSTING_ARG=${OPTARG};;
-    r) FAILURES_REASON_REPOSTING_ARG=${OPTARG};;
-    h) usage_reposting;; # Show the help
-  esac
-done
-
-if [[ -n "${FAILURES_FILE_REPOSTING_ARG}" ]]; then
-  export EXPORTED_RESULT_FAILURES=${FAILURES_FILE_REPOSTING_ARG}
-else
-  export ACCOUNT_ID_ARG=${ACCOUNT_ID_REPOSTING_ARG}
-  export FAILURE_REASON_LIST_ARG=${FAILURES_REASON_REPOSTING_ARG}
-  source $(dirname "$0")/vault_list_post_postings_failures.sh ${ACCOUNT_ID_REPOSTING_FILTER} ${FAILURES_REASON_REPOSTING_FILTER}
-fi
-
-cat $EXPORTED_RESULT_FAILURES | jq -R | jq -s | uniq \
-  | xargs -I '{}' -n1  curl -k "${REPOSTING_URL}:republish" -X POST -H "X-Auth-Token: ${REPOSTING_TOKEN}" -H "Content-Type: Application/Json" \
-    --data-binary "{\"account_id\": \"{}\",\"republish_type\": \"REPUBLISH_TYPE_REPUBLISH_BLOCKED_FAILURES\"}"
