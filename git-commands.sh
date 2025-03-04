@@ -372,3 +372,9 @@ git remote add origin ssh://user@host:1234/srv/git/example   # here on port 1234
 # Switch to remote branch on local machine
 git branch -v -a
 git switch -c test origin/test
+
+# set git proxy
+git config --global http.proxy http://proxy.mycorps.net:10443
+git config --global https.proxy http://proxy.mycorps.net:10443
+export ALL_PROXY=proxy.mycorps.net:10443
+
