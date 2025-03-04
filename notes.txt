@@ -1,9 +1,6 @@
 babak.habibnejadgohardani@jpmorgan.com
 D645581
 
-
-
-
 Kubernetes Drain:
 How to drain an Kubernetes node: You can use "kubectl drain" to safely evict all of your pods from a node before you perform maintenance on the node (e.g. kernel upgrade, hardware maintenance, etc.). Safe evictions allow the pod's containers to "gracefully terminate" and will respect the PodDisruptionBudgets you have specified.
 By default "kubectl drain" ignores certain system pods on the node that cannot be killed.
@@ -203,12 +200,6 @@ Once installed, open OpenLens and go to Catalog --> Clusters
 Choose your cluster
 Poke around OpenLens.
 
-
-
-
-
-
-
         {
             "Sid": "AllowCloudTrailProcess"
             "Effect": "Allow",
@@ -401,46 +392,6 @@ else
 fi
 
 
-In the Jenkinsfile:
-The "isRunSonarQube" parameter has now been updated to be true by default (no action needed)
-The "useCoverageTool" parameter has now been updated to be true by default and generates the coverage report to be used by SonarQube (no action needed)
-Set the "coverageToolSourceDir" field to point to your source file directory (ex. "src"). This will determine the files for which the coverage metric is computed
-Create a "sonar-project.properties" file
-Set the "sonar.sources" field to point to your source file directory (ex. "src")
-Set the "sonar.tests" field to poi to your test folder (ex. "tests")
-Set the "sonar.python.coverage.reportPaths" field to point to the coverage report generated during the "Unit Testing" step in the build. By default that path is "generated/coverage_report.xml".
-The path/report name are defined in "buildAndDeployPython", in the "COVERAGE_XML_REPORT" variable. 
-Warnings:
-A new pipeline parameter "covergaeToolSourceDir" was created serving the same purpose as "coverageToolProject" while being more informative. To accommodate legacy projects, "coverageToolProject" has been kept in buildAndDeployPython for now. It is highly encouraged to use the new parameter for any new projects and replace it for the already existing projects.
-Previously, buildAndDeployPython used a default value for "coverageToolSourceDir" setting it to "tests". By setting the parameter to point to the test folder, the coverage will be reported for the test files, resulting in a 0% coverage reported in SonarQube. The parameter's default value has been changed to a more appropiate value: "src". Projects having their source file directory named "src" can skip setting up the "coverageToolSourceDir" field in the Jenkinsfile.
-
-
-A. Spinnaker pipeline spinnaker-for-core-hault
-
-Run the pipeline at version 0.11.15, this step should be without issues except the error related to re-creating the SA. Branch DYN-576756-add-harness-0.11
- set the terraform version to 0.12.12 , this is required for first time due to errors if we set the version to higher 0.12 sub versions, which is caused by how the formatting of the state files changes in higher terraform versions. only other solution I have found online was to delete and recreate the state file. comment the 
-aws_iam_role_policy.hault_access_policy , this will allow the the OIDC role to be deleted. this will throw an error that Role already exists (plus SA error).  Branch DYN-576756-add-harness-0.12
- set the version to 0.12.31 , and uncomment aws_iam_role_policy.hault_access_policy and run the pipeline. will throw an error that there is wrong value for the policy "MalformedPolicyDocumentException" , re-run the pipeline and the issue will be fixed (will still get the SA error)  Branch DYN-576756-add-harness-0.11
-run the version 0.13.7 pipeline, no changes should be visible here (except SA error)  Branch DYN-576756-add-harness-0.12
-run the pipeline version 1.0.7 . here we should see changes related to object_naming.random_string.GUID_GENERATED, aws_s3_bucket_versioning.versioning, aws_s3_bucket_server_side_encryption_configuration.encryption, aws_s3_bucket_public_access_block.deny_public_access, aws_s3_bucket_logging.logging, aws_s3_bucket_lifecycle_configuration.lifecycle, bucket.aws_s3_bucket_acl.acl[0]  being created, this is due to fact that we are moving from older version of s3-bucket to a newer and remote version CP has created, the Role for OIDC will also be recreated as we are moving from internal oidc module to the one hosted on core-vault  Branch DYN-576756-add-harness-1.0.7
-
- at this point terraform state is at version 1.0.7 and we can delete the Service account manually from command line and recreate it from pipeline. in lower terraform versions it wouldn't be useful since due to terraform bugs deleting and recreating SA would just cause the error to be reestablished the next time we run the pipeline. run the pipeline again on version of 1.0.7 of terraform, it will re-create the Service account and update some resources that are directly related to it. to make sure everything is working fine, re-run the plan again, there should not be ANY resource that needs creation or update.  Branch DYN-576756-add-harness-1.0.7
-B. Harness pipeline harness-for-core-hault
-
- run the pipeline on Harness, it should not re-create any resource, but will update the state to terraform 1.4.6  Branch DYN-576756-add-harness
-delete the hault-configure pod from core-hault and restart all deployments in core-vault 
-kubectl get pod -n 105250-core-hault
-kubectl delete pod hault-configurer-xxxxx-xxxx -n 105250-core-hault
-kubectl rollout restart deploy -n 105250-core-vault
-check the pods on core-vault again, there should be no errors
-kubectl get pod -n 105250-core-vault
-
-
-Known issues:
-
-pipeline might throw errors due to issues downloading the AWS or Kubernetes provider. re-running the pipeline again will fix these issues.
-
-
 HashiCorp Vault Grafana Metrics
 Created by Babak Habibnejad Gohardani on Sep 25, 2024
 Health Status: group by (pod) (up{job="hault"})  => checks if the hault pods are up and working or not (currently only shows existing pods)
@@ -466,134 +417,6 @@ Request Handling: sum(vault_core_handle_request) by (quantile) => which quantile
 Log Requests: vault_audit_log_request_count, vault_audit_log_response_count => count of audit log requests in Vault. Vault's audit logging feature records all requests and responses to the Vault server, providing a detailed log of all operations for security and compliance purposes. This metric would track the number of audit log entries created
 
 Log Request/Response Failures: vault_audit_log_request_failure, vault_audit_log_response_failure => count of failed attempts to log request/responses in the audit log of Vault. Vault's audit logging feature records all requests and responses to the Vault server, and this metric would track the number of times an attempt to log a request/response has failed. Failures could occur due to various reasons such as misconfigurations, permission issues, or storage problems.
-
-
-Once a message has been placed on a DLQ this indicates that the standard processing of the message was not able to complete, and no further processing of the message will occur automatically. You must take additional steps in order to recover the original operation that was unable to complete. Failure to do so can lead to incomplete Vault functionality.
-
-When are DLQs used?
-The errors encountered by a Vault component when processing a message consumed from a Kafka topic fall into two broad categories:
-
-Transient Errors occur when automatically retrying at a later time, without any state change within Vault, is likely to lead to successful processing of the message. For example if the database is temporarily unavailable, this would be a retryable error as when the database becomes available again the message will be processed successfully.
-
-Non-Transient Errors occur when automatically retrying, without any state change within Vault, is unlikely to lead to successfully processing the message. For example, if the message cannot be deserialised by the consumer, attempts to retry processing will not be successful.
-
-While most transient errors are handled within Vault, DLQs are used as a recovery mechanism for Kafka messages that are unable to be processed due to some non-transient errors.
-
-The Vault DLQ process is as follows:
-
-A Vault component which is a consumer of a particular Kafka topic consumes a message from the topic and attempts to process it.
-
-While processing the message, a non-transient error is encountered, meaning retrying with the system in its current state will not produce a successful outcome.
-
-The message is placed on a dedicated DLQ Kafka topic. Processing of subsequent messages from the original topic continues, but processing of the message that has been placed on the DLQ does not continue.
-
-Note that in some cases when a transient error is encountered when processing a message, depending on the cause of the error, processing of the message may be retried indefinitely. For example if the database remains unavailable. Cases like this should still be monitored as they may still require manual intervention to proceed (e.g. ensuring services can communicate with one another).
-
-DLQs may contain PII data both in the message bodies and the error output. As a result any personnel or system reading data from any DLQ may be exposed to it. You must take the appropriate steps to ensure that readers of DLQ messages have the appropriate authorisation.
-
-DLQ naming
-All DLQ topics within Vault follow a standard naming convention of containing .dlq or .failure in the topic name, most often at the end.
-
-DLQ message format
-When a message is placed on a DLQ topic, the format of the message on the DLQ will be as follows:
-
-The body of the message is identical to the original message, in the same format (JSON or Protobuf). For example if the originally consumed message is an AccountEvent, then the DLQ’d message body will be the same AccountEvent message.
-
-DLQ metadata detailing information about the original message is present in the x-tm-dlq-metadata message header in the form of a standard DLQ metadata message (see below for the full format). DLQ metadata values will always be formatted as JSON key / value pairs.
-
-Generally the processing error that led to the message being DLQ’d is present in either the x-tm-vault-error message header or in the stack_trace header within the DLQ metadata . These values will always be formatted as a JSON key / value pair.
-
-The DLQ metadata contains four mandatory fields and one optional field all as JSON key / value pairs:
-
-original_headers. This is a repeated field containing all the Kafka headers present in the original message.
-
-original_topic. This is a single string whose value is the topic that the original message was consumed from.
-
-original_consumer_group. This is a single string whose value is the consumer group used by the consumer which encountered the error while processing the message.
-
-original_timestamp. This is a single string whose value is the timestamp of when the original message was created.
-
-stack_trace. This is an optional single string field which, if present, will contain the processing error.
-
-Monitoring DLQs
-As mentioned above, you must actively monitor DLQs for new messages. In many cases, a message being placed on a DLQ represents a critical processing error which requires immediate attention.
-
-Thought Machine provides Prometheus Alerts that track new messages being placed onto DLQ topics. Alert pagers should be built on top of these alerts to inform you of new messages placed on a DLQ.
-
-For more information on how to configure Alert Pagers, as well as the full list of DLQ alerts, see the Observability Stack Installation and User guide.
-
-Detailed information about each individual DLQ can be found under the associated API section. This includes the processing being performed, the impact of a message being placed on that DLQ, and potential recovery steps to follow.
-
-DLQ recovery
-Any time a message is placed on a DLQ, you must take any necessary action to recover processing. Failure to do so will result in a loss of data and/or Vault functionality. While the severity of the functionality affected by a message placed on a DLQ will vary, note that even for less critical issues you must recover from DLQ messages within the timeframe of your Kafka retention period, which defaults to 7 days. Failure to do so will result in the message on the DLQ being permanently deleted, meaning recovery of the data/functionality may no longer be possible.
-
-When a message is detected on a DLQ Kafka topic:
-
-Consume the message from the DLQ, including the headers. As mentioned above the headers contain the error message. If displaying the Kafka message in full, take care to ensure viewers have the appropriate authorisation to view the data.
-
-Consult the DLQ documentation for the affected component in the corresponding API section of the Documentation Hub. If the relevant documentation does not provide sufficient information for the DLQ in question, contact Thought Machine support, following the process in your Service Procedure Manual.
-
-If the specific error is documented for the affected DLQ, follow the recovery instructions.
-
-If the error is not documented for the affected DLQ, contact Thought Machine support, following the process in your Service Procedure Manual.
-
-You should only manually interact with DLQ Kafka topics in error scenarios, and when doing so must take care not to use any consumer groups that are used by any production services
-
-Reading messages from a DLQ
-How you interact with Kafka topics within Vault will depend on your Kafka hosting solution and internal processes. If a lightweight approach is required for consuming messages, Thought Machine recommends the use of Kafkacat for interacting with Vault DLQ Kafka topics in error scenarios. Instructions for how to download and use Kafkacat can be found here, while providing the -h option when running Kafkacat will provide more information about the available functionality. Remember that wherever you choose to run Kafkacat, it will need access to your Kafka broker.
-
-If you are using Kafkacat to consume and read messages from a DLQ, we recommend:
-
-Running via Docker to ensure the latest version of Kafkacat is used. The command should start with docker run --rm confluentinc/cp-kafkacat kafkacat -b <your_kafka_broker> -t <name_of_dlq_topic> -C.
-
-Using the -J option to ensure the headers are displayed along with the message body for the consumed messages. Alternatively you can specify a format via -f which must include the %h header token.
-
-If you wish to only see the headers, you can provide a format that only contains the header token, e.g. -f ‘Headers: <%h>’. This may be useful if the original message contains data the user is not authorised to see (note however that PII data can sometimes occur in the error message, which will always be present in the headers). For a full list of all the format tokens and what data will be displayed, you can run docker run --rm confluentinc/cp-kafkacat kafkacat -h and consult the ‘Format string tokens:’ section. Only the data associated with a given token will be displayed when the -f option is used.
-
-Kafkacat will produce output to Stdout by default.
-
-If the message body is in protobuf format, it will not be human readable when read from the DLQ. You are still required to deserialise using the provided Vault .proto files. See the Deserialising Proto Messages section below. If the DLQ in question does not have the message type documented, contact Thought Machine support, following the process in your Service Procedure Manual.
-
-If your Kafka solution or internal process prohibits the use of Kafkacat, you must implement your own method of consuming from/producing to Vault DLQ Kafka topics.
-
-Deserialising Protobuf messages
-Depending on your environment settings, some DLQ message bodies will be in either Protobuf or JSON format:
-
-If the format is JSON, you do not need to follow the remainder of this section and must not use protoc on your message output.
-
-If the format is Protobuf, you will need to deserialise the message before it is human readable, instructions for which are below.
-
-To deserialise an encoded protobuf message, you must have access to the corresponding .proto file that contains the message definition in question. Many of these .proto files can be found in the 'Downloading the proto files' part of the Streaming API documentation for the relevant API. Once you have this file you can convert the message into human readable JSON. If you do not have access to the corresponding .proto file, please contact Thought Machine support, following the process in your Service Procedure Manual.
-
-To determine the correct .proto file for deserialising the body of a DLQ:
-
-Go to the documentation for the specific DLQ in question.
-
-Find the message type under the 'What message has been sent to the DLQ?' section.
-
-Find the .proto file that contains this message type. There will be a Message <value> line in the file, where <value> is the message type from the previous step.
-
-There are many ways that a .proto file can be used to read a message in protobuf format. If a lightweight approach is needed, Thought Machine recommends the use of Protoc.
-
-Protoc can be run on any protobuf bytes to convert to JSON as follows:protoc --decode=<package_name.message_name> <path_proto_file>
-
-The package name is defined in the .proto file by the line: package <package_name>;
-
-For example:
-
-protoc --decode=test_package.TestMessage path_to_proto/test.proto
-
-would deserialise protobuf bytes into JSON format for a protobuf message of type TestMessage where:
-
-The TestMessage type is defined in 'test.proto'.
-
-The 'test.proto' contains a package test_package; line, which defines the package name.
-
-The 'test.proto' file is located in your /path_to_proto/ directory.
-
-If using protoc in conjunction with Kafkacat, you should only read the message body from Kafka before passing it to protoc. For example: docker run --rm confluentinc/cp-kafkacat kafkacat -b <your_kafka_broker> -t <name_of_dlq_topic> -C -D “” | protoc --decode=test_package.TestMessage path_to_proto/test.proto.
-
-
 
 
 # harness.io/skip-file-for-deploy
