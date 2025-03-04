@@ -347,31 +347,28 @@ git remote add origin ssh://user@host:1234/srv/git/example   # here on port 1234
 #  DownStream => you're downstream when you copy (clone, checkout, etc) from a repository. Information flowed "downstream" to you.
 # UpStream => you are pushing to upstream ("otherRepo" is still "upstream", where the information now goes back to).
 
-
 # ***** How to do a Diff in VS Code (Compare Files) *****
-
 # 1. Right click the first file and "Select for Compare"
 # 2. Right click on the second file and "Compare with Selected"
 # 3. You should see the diff panel appear once you've completed these steps
 
-
 # **** Add Members to Project in GitLab *****
-
 # Project -> add member
 # Add project to the group, then all group members get added to the project
 # Add new users to db engineering group, use the role besides "guest" to add user.
 # Add people to this group: "Gitlab Database group"
 
-
 # **** Run / Open VSCode from Mac Terminal *****
-
 # Open Visual Studio Code
 # Open the command pallette with 'Command + Shift + P'
 # Type 'Shell' in command palette
 # Select Shell Command: 'Install code in PATH'
 # Now open your terminal type: $ code .
 
-
 # *** How to update feature-branch with master branch when still developing it? ***
 # here we can also use merge or rebase, but instead of merging feature to master, we can merge master To feature branch and add it's changes to our branch. rebase will do same thing but will add all the different commits 
 # of the master to our commits.
+
+# Switch to remote branch on local machine
+git branch -v -a
+git switch -c test origin/test
