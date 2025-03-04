@@ -1,9 +1,7 @@
 babak.habibnejadgohardani@jpmorgan.com
 D645581
 
-Switch to remote branch on local
-> git branch -v -a
-> git switch -c test origin/test
+
 
 
 Kubernetes Drain:
@@ -469,13 +467,6 @@ Log Requests: vault_audit_log_request_count, vault_audit_log_response_count => c
 
 Log Request/Response Failures: vault_audit_log_request_failure, vault_audit_log_response_failure => count of failed attempts to log request/responses in the audit log of Vault. Vault's audit logging feature records all requests and responses to the Vault server, and this metric would track the number of times an attempt to log a request/response has failed. Failures could occur due to various reasons such as misconfigurations, permission issues, or storage problems.
 
-
-DLQs
-Welcome to the DLQ documentation.
-
-Overview
-What are DLQs?
-Dead Letter Queues (DLQs) are a standard error handling mechanism for streaming software systems. In certain scenarios messages that cannot be processed by a production component when read from a queue are instead placed on a separate queue, the DLQ, for manual investigation and recovery. This ensures that subsequent messages on the original queue can continue to be processed, while any messages that cannot be processed are retained in full, i.e. there is no data loss.
 
 Once a message has been placed on a DLQ this indicates that the standard processing of the message was not able to complete, and no further processing of the message will occur automatically. You must take additional steps in order to recover the original operation that was unable to complete. Failure to do so can lead to incomplete Vault functionality.
 
@@ -1184,201 +1175,14 @@ Sample project with pipeline setup guidance
 To add post implementation
 
 
-This document details the Minimum Acceptance Criteria to ensure adequate and detailed documentation is included in ServiceNow Change Records.
-
-Scope
-
-This criteria is valid for all Normal Change Records
-
-Roles and Responsibilities
-
-The Change Owner is responsible for populating the CHG records with the relevant data.
-
-The Change Approver is responsible for ensuring the MAC is met before approving the Change.
-
-II. Main Details Section
-Configuration Item
-
-Input in the Configuration Item that is being impacted by the change.
-Short Description
-
-MUST - Provide a high-level overview / description of the change in business language (limit technical jargon).
-MUST - use business language and avoid acronyms.
-SHOULD - Prefix with the application name.
-DON'T - just add a link to another site/ ticket.
-Description
-
-MUST - Clearly state what the change is going to do and why it is required.
-MUST - Use business language and explain acronyms.
-MUST - Summarize the risks of implementing the change (i.e. what could go wrong and what is the likelihood?) and/or business impact of NOT implementing it.
-MUST - Explain the business driver/rationale/requirement for the change and document the business impact of NOT implementing the change.
-MUST - Provide a description of all changes to be implemented.
-MUST – Include all DYN tickets associated to the change
-SHOULD - List any EPV (privileged access) accounts that are required to implement the change.
-If the change window is more than 24 hours, add a justification for the extended change window.
-Change Window – Planned Start / End Dates
-
-Change Window = Implementation + Technical Validation + Back Out Plan + Technical Validation of the Backout
-MUST - Include Breakglass Operations.
-MUST - factor in any dependencies, e.g. resource availability, batch cycle completion, systems availability.
-While firmwide recommends that changes do not exceed 24 hours, ensure change window is sufficiently long.
-If the change window is more than 24 hours, the implementation plan must contain sufficient details (day-by-day breakdown of activities) to justify the change window.
-Risk
-
-The Risk Level is automatically calculated in ServiceNow using the Risk Model and is fully data driven.
-The Change Owner can manually raise the Risk Level if necessary.
-III. Planning Section
-Release Attestation
-
-Declare if the change is based on a software release or code update and as such is subject to all applicable controls for Technology Development (TCS-071/TCS-074).
-Fallback Strategy
-
-Select from the Drop Down if the Fallback Strategy is Backout or Fix Forward.
-The fix forward solution is to stabilize the environment. Justification is required if Fix Forward is selected.
-Pre-implementation plan
-
-MUST - Document activities that were completed prior to the change implementation to ensure success.
-MUST - Utilize JET evidence store (go/JET). Otherwise, pre-Implementation testing evidence should be attached to the Change Record.
-SHOULD - If applicable, mention previous, similar, successful implementations from the past.
-Implementation Plan
-
-MUST - Clearly document the steps of the implementation plan, including critical milestones and the teams responsible for performing them.
-MUST – Detail all the different test types of test including smoke, alpha with associated JET IDs.
-MUST – Detail the list of tests and their pass criteria as a %.
-MUST – For any tests that did not pass ICB quality gates, a decision ticket must be included to show evidence of risk acceptance of the failed tests.
-MUST – Explicitly document which controls and not for the release (to ensure that change approvers are informed of the necessary control requirements).
-SHOULD - Include a detailed technical plan which is attached to the Change record or Implementation Task record.
-SHOULD - Identify a ‘point of no return’ in the implementation plan. Upon reaching this point, assess if the change implementation is at risk of going beyond the Planned End time.
-Fallback Strategy Plan
-
-MUST - State if the backout is automated or manual, and whether the backout plan has been tested/proven.
-MUST - Include the contact details of the person responsible for executing the backout.
-SHOULD - Include a detailed step by step plan which is attached to the Change Record.
-Post Validation Plan
-
-MUST - Describe the checks that can be feasibly conducted within the change window to validate the success of the change. (evidence of this is required for Post Change Validation)
-MUST - Clearly state the success criteria and who is responsible for executing the checks.
-IV. Other useful details
-Outages
-
-If the implementation will cause a planned outage or degradation of services, an Outage record must be created; if there are multiple outages they should be defined separately.
-Change Task – Validation
-
-Document post change validation testing and attach relevant evidence to the ServiceNow Change Record as documented in the Post Validation Plan.
- Steps to create a Change Task - Validation
-V. Key Takeaways
-Change data should be clear and simple to understand – limit the use of technical jargon and don’t use acronyms.
-Include details of ALL changes that are included in the release.
-Be generous when planning the change window.
-Include a detailed summary of context if adding dynamic links to Change Records
-Why? – Firmwide guidance is to avoid dynamic links that are not accessible to all reviewers and auditors
-Use Jet Evidence Store for evidence as applicable (attach evidence to the Change Record)
-Ensure you are thorough in your pre-implementation, implementation, fall-back strategy and post validation test plans. (use tool tip links in SNOW if in doubt)
-Refer to the Change Quality Review Playbook for examples of good vs bad changes
-
-
-
-
-$ git --version
-$ git config --global http.proxy http://proxy.jpmchase.net:10443
-$ git config --global https.proxy http://proxy.jpmchase.net:10443
-$ export ALL_PROXY=proxy.jpmchase.net:10443
-
-
-
-sonar qube activation:
-
-#setup.cfg
-[flake8]
-extend-ignore = E501
-
-[tool.isort]
-profile = "black"
-
-[tool:pytest]
-addopts = --verbose --doctest-modules --junitxml="python-test-report.xml" --cov-report=html --cov-report=term --cov=src
-pythonpath = src
-
-[coverage:report]
-exclude_also =
-    if __name__ == .__main__.:
-
-
-
-#sonar-project.properties
-sonar.sources=src
-sonar.python.coverage.reportPaths=generated/coverage_report.xml
-sonar.tests=tests
-
-
-# Jenkinsfile
-@Library(['dynamo-shared-lib', 'services-shared-lib']) _
-def podTemplateYaml = libraryResource('python310-kaniko.yaml')
-
-buildAndDeployPythonMultiApp {
-    coverageToolSourceDir = 'src'
-    revision = '1.0'
-    kubernetesLabel = 'python-svc'
-    kubernetesYaml = podTemplateYaml
-    gitProjectKey = 'SRE'
-    gitRepositoryName = 'icb-ledgers-vault-monitoring'
-    spinnakerWebhookName = 'tm-vault-cert-monitor'
-    emailOnFailure = "tushar.shah@jpmorgan.com"
-    projectSealId = '105250'
-    isRunSsapScan = true
-    isRunImageScan = true
-    isRunSonarQube = true
-    isRunSiCScan = true
-    useCoverageTool = true
-    waitForSsapScanResults = true
-}
-
-
-
 kubectl get --raw "/apis/custom.metrics.k8s.io/v1beta1/namespaces/105250-core-vault/deployments.apps/vault-postings-account-postings-processor/max_service_consumer_group_lag"
 
 {"kind":"MetricValueList","apiVersion":"custom.metrics.k8s.io/v1beta1","metadata":{},"items":[{"describedObject":{"kind":"Deployment","namespace":"105250-core-vault","name":"vault-postings-account-postings-processor","apiVersion":"apps/v1"},"metricName":"max_service_consumer_group_lag","timestamp":"2024-02-27T16:21:55Z","value":"0","selector":null}]}
 
-kubectl get --raw "/apis/custom.metrics.k8s.io/v1beta1/namespaces/105250-core-vault/deployments.apps/vault-ledger-balances-distribution-processor/max_service_consumer_group_lag"
+kubectl get statefulset -n 105250-core-vault prometheus-postgres  Warning  PolicyViolation  42m (x2 over 42m)      kyverno-scan  policy require-memory-limits/autogen-validate-resources fail: validation error: Memory resource limits are required.
 
-{"kind":"MetricValueList","apiVersion":"custom.metrics.k8s.io/v1beta1","metadata":{},"items":[{"describedObject":{"kind":"Deployment","namespace":"105250-core-vault","name":"vault-ledger-balances-distribution-processor","apiVersion":"apps/v1"},"metricName":"max_service_consumer_group_lag","timestamp":"2024-02-27T16:25:17Z","value":"0","selector":null}]}
-
-
-the issue was the the user we used to grant the execution of the function via postgres user, however that user was not the owner of pg_ls_waldir function and because of that the grant execution was failing.
-
-after we altered the ownership to add postgres as user, the issue was fixed and we managed to grant access to this function and fix the errors.
-
-fixed an all lower environments
-
-
-There is an issue related to prometheus_exporter node after enabling the PG_ADMIN role.
-
-
-
-kubectl get statefulset -n 105250-core-vault prometheus-postgres  Warning  PolicyViolation  42m (x2 over 42m)      kyverno-scan  policy require-memory-limits/autogen-validate-resources fail: validation error: Memory resource limits are required. rule autogen-validate-resources failed at path /spec/template/spec/containers/2/resources/limits/kubectl get pods -n 105250-core-vault | grep prometheus-postgres
-    State:       Waiting
-      Reason:    CrashLoopBackOff
-    Last State:  Terminated
-      Reason:    OOMKilled
-      Message:   "WAL segment loaded" segment=510 maxSegment=749
 ts=2024-07-23T07:58:56.074Z caller=head.go:783 level=info component=tsdb msg="WAL segment loaded" segment=511 maxSegment=749
 ts=2024-07-23T07:58:56.075Z caller=head.go:783 level=info component=tsdb msg="WAL segment loaded" segment=512 maxSegment=749
-ts=2024-07-23T07:58:56.075Z caller=head.go:783 level=info component=tsdb msg="WAL segment loaded" segment=513 maxSegment=749
-ts=2024-07-23T07:58:56.076Z caller=h
-ead.go:783 level=info component=tsdb msg="WAL segment loaded" segment=514 maxSegment=749
-ts=2024-07-23T07:58:56.076Z caller=head.go:783 level=info component=tsdb msg="WAL segment loaded" segment=515 maxSegment=749
-ts=2024-07-23T07:58:56.076Z caller=head.go:783 level=info component=tsdb msg="WAL segment loaded" segment=516 maxSegment=749
-ts=2024-07-23T07:58:56.077Z caller=head.go:783 level=info component=tsdb msg="WAL segment loaded" segment=517 maxSegment=749
-ts=2024-07-23T07:58:56.077Z caller=head.go:783 level=info component=tsdb msg="WAL segment loaded" segment=518 maxSegment=749
-ts=2024-07-23T07:58:56.139Z caller=head.go:783 level=info component=tsdb msg="WAL segment loaded" segment=519 maxSegment=749
-ts=2024-07-23T07:58:56.140Z caller=head.go:783 level=info component=tsdb msg="WAL segment loaded" segment=520 maxSegment=749
-ts=2024-07-23T07:58:56.140Z caller=head.go:783 level=info component=tsdb msg="WAL segment loaded" segment=521 maxSegment=749
-ts=2024-07-23T07:58:56.140Z caller=head.go:783 level=info component=tsdb msg="WAL segment loaded" segment=522 maxSegment=749
-ts=2024-07-23T07:58:56.140Z caller=head.go:783 level=info component=tsdb msg="WAL segment loaded" segment=523 maxSegment=749
-ts=2024-07-23T07:58:56.141Z caller=head.go:783 level=info component=tsdb msg="WAL segment loaded" segment=524 maxSegment=749
-ts=2024-07-23T07:58:56.141Z caller=head.go:783 level=info component=tsdb msg="WAL segment loaded" segment=525 maxSegment=749
-ts=2024-07-23T07:59:05.078Z caller=head.go:783 level=info component=tsdb msg="WAL segment loaded" segment=526 maxSegment=749
-
 
 
 kubectl exec -it -n 105250-vault-operators vault-tools-7bb8b958f7-l2k5l -- shpython3 blue-green-replication.py --blue-db="db-105250-0000ie-ncore-tnn-core-vault-cluster"  --green-db="db-105250-0000ie-ncore-tnn-core-vault-cluster" --mode=recreate_pg_stat_statementspython3 blue-green-replication.py --blue-db="db-105250-0000ie-dcore-tnn-core-vault-cluster" --green-db="db-105250-0000ie-dcore-tnn-core-vault-cluster" --mode=grant_pg_monitor
@@ -1393,9 +1197,3 @@ by running this command:
 
 DROP EXTENSION IF EXISTS pg_stat_statements;
 CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
-
-
-
-based on responses from TM, we either have to add specific permissions to users to access this function or using the option on postgres to minimize the "wal_level" however this changes might cause some other issues that TM will not support or be responsible for if they happen.
-
-other option is upgrading to Vault version 5.2.7 which contains the fix to this issue. this seems to be the best option in our case.
