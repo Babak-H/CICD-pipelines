@@ -378,3 +378,13 @@ git config --global http.proxy http://proxy.mycorps.net:10443
 git config --global https.proxy http://proxy.mycorps.net:10443
 export ALL_PROXY=proxy.mycorps.net:10443
 
+# How to modify existing, unpushed commit messages
+# Amending the most recent commit message
+git commit --amend
+git commit --amend -m "New commit message"
+
+# Changing the message of a commit that you've already pushed to your remote branch
+git push <remote> <branch> --force
+# or
+git push <remote> <branch> -f
+
