@@ -1,68 +1,7 @@
 babak.habibnejadgohardani@jpmorgan.com
 D645581
 
-        {
-            "Sid": "AllowCloudTrailProcess"
-            "Effect": "Allow",
-            "Action": [
-                "cloudtrail:StartLogging",
-                "cloudtrail:StopLogging",
-                "cloudtrail:CreateTrail",
-                "cloudtrail:DeleteTrail",
-                "cloudtrail:DescribeTrails",
-                "cloudtrail:GetTrail",
-                "cloudtrail:GetTrailStatus",
-                "cloudtrail:GetEventSelectors",
-                "cloudtrail:LookupEvents"
-                "cloudtrail:StartLogging",
-                "cloudtrail:StopLogging",
-                "cloudtrail:ListPublicKeys",
-            ],
-            "Resource": "*"
-        }
-
-creating CloudTrail: AccessDeniedException: User: arn:aws:sts::279924677952:assumed-role/105250-EMEA-DCORE-INFRADEPLOYER/aws-go-sdk-1710163813771163623 is not authorized to perform: cloudtrail:CreateTrail on resource: arn:aws:cloudtrail:eu-west-1:279924677952:trail/aurora-cloudtrail because no identity-based policy allows the cloudtrail:CreateTrail action
-│ 	status code: 400, request id: e26237fb-1141-448f-ae79-d07a9c8b0c30
-
-data "aws_iam_policy_document" "aurora_kms_policy" {
-  statement {
-    sid       = "Allow IAM User Permissions"
-    effect    = "Allow"
-    actions   = ["kms:*"]
-    resources = ["*"]
-    principals {
-      identifiers = ["arn:aws:iam::${var.account_id}:root"]
-      type        = "AWS"
-    }
-  }
-  statement {
-    sid     = "Allow Amazon Cloudwatch Log to use this key"
-    effect  = "Allow"
-    actions = [
-      "kms:Encrypt*",
-      "kms:Decrypt*",
-      "kms:ReEncrypt*",
-      "kms:GenerateDataKey*",
-      "kms:Describe*"
-    ]
-    resources = ["*"]
-    principals {
-      identifiers = ["logs.eu-west-1.amazonaws.com"]
-      type        = "Service"
-    }
-    condition {
-      test     = "ArnLike"
-      variable = "kms:EncryptionContext:aws:logs:arn"
-      values   = ["arn:aws:logs:eu-west-1:${var.account_id}:*"]
-    }
-  }
-}
-
-
-{"file":"infrastructure/aws_account_bootstrap/hault/teller/main.go:38","func":"main.main","kind":"application","level":"info","msg":"\u0026{SecretsPath:/etc/hault ConfigPath:/etc/hault/config AppName:vault-postings-enrichment-processor VaultAddr:https://hault.105250-core-hault.svc.cluster.local:8200 VaultCACert:ca_pem HashiCorpVaultNamespace: Namespace:105250-core-vault SecretVersion:1 SecretPrefix:dev SecretKVBackend:secret AuthK8sBackend:kubernetes CSISecretMounts:{EnableCSIMount:false SecretMountPath:/etc/mount/ PathSeparator:!}}","time":"2024-05-08T11:25:02.273Z"}
-{"file":"infrastructure/aws_account_bootstrap/hault/teller/main.go:73","func":"main.main","kind":"application","level":"fatal","msg":"Error fetching authtoken: Error making API request.\n\nURL: PUT https://hault.105250-core-hault.svc.cluster.local:8200/v1/auth/kubernetes/login\nCode: 403. Errors:\n\n* permission denied","time":"2024-05-08T11:25:02.292Z"}
-
-
+       
 **** COCKROACH ****
 
 SHOW GRANTS ON DATABASE "hault-restore";
@@ -80,21 +19,14 @@ REVOKE CREATE,INSERT,UPDATE ON test.customers FROM test_user;
 DROP USER test_user;
 
 
-
-  # tf init -backend-config=../../backends/eu-west-1/LOCAL.tfvars
-  # tf plan -var-file=./DCORE/terraform.tfvars
-  # alias tf=/usr/local/jpmc/versions/0.12.31/terraform
-
+# tf init -backend-config=../../backends/eu-west-1/LOCAL.tfvars
+# tf plan -var-file=./DCORE/terraform.tfvars
+# alias tf=/usr/local/jpmc/versions/0.12.31/terraform
 
 
 "postgres://YourUserName:YourPassword@YourHostname:5432/YourDatabaseName"
 postgresql://[user[:password]@][netloc][:port][/dbname][?param1=value1&...]
 postgres://postgress:PASS@db-105250-000ie-dcore-tnn-core-vault-cluster:5432
-
-
-
-k get cm -A | grep otel
-k describe cm otel-gateway-conf-5kkdcbh579-namespaced-observability-56c154cbe2 -n 105250-core-vault
 
 
 
