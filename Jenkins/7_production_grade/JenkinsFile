@@ -1,0 +1,453 @@
+/*
+requirements:
+- Jenkins has the required plugins installed, such as Pipeline, Credentials, JUnit, HTML Publisher if used, and any Docker/Kubernetes tooling you depend on
+- Jenkins agents have Maven, Docker, kubectl, Helm, Trivy, and other CLIs available or configured through the Jenkins "tools" section
+*/
+
+// Store runtime values that need to be shared between stages.
+def appVersion = ''
+def imageTag = ''
+def imageName = ''
+def shortCommit = ''
+def shouldDeploy = false
+
+pipeline {
+    // Use any available Jenkins agent. In production, prefer a labeled agent such as:
+    // agent { label 'linux-docker' }
+    agent any
+
+    // Global pipeline options control build safety, logging, retention, and behavior
+    options {
+        // Add timestamps to every log line so failures can be correlated with external systems
+        timestamps()
+
+        // Prevent two builds of the same job from deploying over each other
+        disableConcurrentBuilds()
+
+        // Stop the whole pipeline if it runs too long
+        timeout(time: 60, unit: 'MINUTES')
+
+        // Keep Jenkins storage under control by deleting old build records
+        // Adjust retention policy as needed for your team and compliance requirements
+        buildDiscarder(logRotator(numToKeepStr: '30', artifactNumToKeepStr: '10'))
+
+        // Skip Jenkins' automatic checkout so we can do checkout explicitly in the init stage
+        // skipDefaultCheckout is a Jenkins Pipeline option that prevents Jenkins from automatically checking out your source code at the start of a stage or pipeline
+        skipDefaultCheckout(true)
+
+        // Use ANSI colors in shell output when supported by the Jenkins installation
+        ansiColor('xterm')
+    }
+
+    // Parameters let users customize behavior from "Build with Parameters" in Jenkins UI or when triggering builds via API
+    parameters {
+        // Choose where this run should deploy. Pull requests often use "none"
+        choice(name: 'TARGET_ENV', choices: ['none', 'dev', 'qa', 'prod'], description: 'Environment to deploy to')
+
+        // Let the user override the version. If empty, the pipeline derives a version from Git
+        string(name: 'VERSION_OVERRIDE', defaultValue: '', description: 'Optional version override, for example 1.4.2')
+
+        // Allow tests to be skipped in emergencies, though production pipelines should normally keep this enabled
+        booleanParam(name: 'RUN_TESTS', defaultValue: true, description: 'Run unit and integration tests')
+
+        // Allow security scans to be skipped only when your team policy permits it
+        booleanParam(name: 'RUN_SECURITY_SCANS', defaultValue: true, description: 'Run dependency and image scans')
+
+        // Require an explicit production intent before the prod deploy stage can run
+        booleanParam(name: 'CONFIRM_PROD_DEPLOY', defaultValue: false, description: 'Must be checked for production deployment')
+    }
+
+    // Tools must be configured in Jenkins global tool configuration before this pipeline can use them
+    tools {
+        // The name must match the Maven installation name configured in Jenkins
+        maven 'maven-3.6'
+
+        // The name must match the JDK installation name configured in Jenkins
+        jdk 'jdk-17'
+    }
+
+    // Environment variables are available to all stages and shell commands
+    environment {
+        // Application name used for Docker image names, Helm release names, and logs
+        APP_NAME = 'my-app'
+
+        // Container registry repository
+        REGISTRY_IMAGE = '123456789.dkr.ecr.us-east-1.amazonaws.com/my-app'
+
+        // Credentials IDs must exist in Jenkins Credentials
+        REGISTRY_CREDENTIALS_ID = 'container-registry-credentials'
+        KUBECONFIG_CREDENTIALS_ID = 'kubeconfig-file'
+        SLACK_WEBHOOK_CREDENTIALS_ID = 'slack-webhook-url'
+
+        // Helm chart and values files used for deployments
+        HELM_CHART_DIR = './helm/my-app'
+        HELM_VALUES_DEV = './helm/my-app/values-dev.yaml'
+        HELM_VALUES_QA = './helm/my-app/values-qa.yaml'
+        HELM_VALUES_PROD = './helm/my-app/values-prod.yaml'
+
+        // Maven local repository inside the workspace improves cache isolation between jobs
+        MAVEN_OPTS = '-Dmaven.repo.local=.m2/repository'
+    }
+
+    stages {
+        stage('init') {
+            steps {
+                // Delete old workspace files so each run starts cleanly
+                cleanWs()
+
+                // Checkout the exact commit Jenkins is building
+                checkout scm
+
+                // Compute reusable metadata such as Git SHA, version, image tag, and deploy decision
+                script {
+                    // Short commit SHA is useful for traceability in image tags and logs, and is more human-readable than the full SHA. Adjust length as needed for uniqueness in your repository
+                    // git rev-parse --short HEAD  => prints the first 8 characters of the current commit hash
+                    shortCommit = sh(script: 'git rev-parse --short=8 HEAD', returnStdout: true).trim()
+
+                    // Use a manually provided version when present, otherwise create a build-based version
+                    appVersion = params.VERSION_OVERRIDE?.trim()
+                        ? params.VERSION_OVERRIDE.trim()
+                        : "0.0.${env.BUILD_NUMBER}"
+
+                    // Use both version and commit SHA so the image is human-readable and unique
+                    imageTag = "${appVersion}-${shortCommit}"
+
+                    // Full image name that later stages build, scan, push, and deploy
+                    imageName = "${env.REGISTRY_IMAGE}:${imageTag}"
+
+                    // Deploy only when the user selected a real environment
+                    shouldDeploy = params.TARGET_ENV != 'none'
+                }
+
+                // Print safe metadata. Do not print secrets or credential values:
+                echo "Application: ${env.APP_NAME}"
+                echo "Branch: ${env.BRANCH_NAME ?: 'not a multibranch job'}"
+                echo "Commit: ${shortCommit}"
+                echo "Version: ${appVersion}"
+                echo "Image: ${imageName}"
+                echo "Target environment: ${params.TARGET_ENV}"
+            }
+        }
+
+        stage('validate') {
+            // run several steps of this stage in parallel since they do not depend on each other and can save time by running concurrently
+            parallel {
+                stage('lint') {
+                    steps {
+                        // Run formatting or lint checks
+                        sh 'mvn -B -DskipTests validate'
+                    }
+                }
+
+                stage('dependency scan') {
+                    when {
+                        // Run this stage only when security scans are enabled
+                        expression { return params.RUN_SECURITY_SCANS }
+                    }
+                    steps {
+                        // Scan the repository filesystem for dependency and secret issues:
+                        sh 'trivy fs --exit-code 1 --severity HIGH,CRITICAL .'
+                    }
+                }
+            }
+        }
+
+        stage('build') {
+            steps {
+                // Build the application artifact without running tests here; tests have their own stage
+                sh 'mvn -B -DskipTests clean package'
+
+                // Archive build artifacts so they can be downloaded from the Jenkins build page:
+                archiveArtifacts artifacts: 'target/*.jar', fingerprint: true, allowEmptyArchive: true
+            }
+        }
+
+        stage('test') {
+            when {
+                // Run test stages only when RUN_TESTS is checked
+                expression { return params.RUN_TESTS }
+            }
+            // we have stages inside this stage because we want to publish test results separately for unit and integration tests, and we want them to run in sequence since integration tests often depend on the artifact built in the build stage:
+            stages {
+                stage('unit tests') {
+                    steps {
+                        // Run unit tests
+                        sh 'mvn -B test'
+                    }
+                    // The post section allows us to run steps after the main steps of the stage, regardless of whether they succeeded or failed
+                    post {
+                        always {
+                            // Publish JUnit XML results even when tests fail so the failure is visible in Jenkins UI:
+                            junit testResults: 'target/surefire-reports/*.xml', allowEmptyResults: true
+                        }
+                    }
+                }
+
+                stage('integration tests') {
+                    steps {
+                        // Run integration tests. This assumes a Maven profile named integration-tests exists
+                        sh 'mvn -B verify -Pintegration-tests'
+                    }
+                    post {
+                        always {
+                            // Publish integration test reports if the project creates them:
+                            junit testResults: 'target/failsafe-reports/*.xml', allowEmptyResults: true
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('quality gate') {
+            steps {
+                // Run code quality checks with SonarQube analysis
+                // only run this section when sonar-token credentials are available in Jenkins, otherwise skip it. This allows the pipeline to run in environments where SonarQube is not set up without failing:
+                withCredentials([string(credentialsId: 'sonarqube-token', variable: 'SONAR_TOKEN')]) {
+                    sh '''
+                        mvn clean verify org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
+                          -Dsonar.projectKey=${env.APP_NAME} \
+                          -Dsonar.host.url=http://sonarqube-server:9000 \
+                          -Dsonar.login=${SONAR_TOKEN}
+                    '''
+                }
+
+                // Keep this echo as a reminder that real teams usually enforce a quality gate here:
+                echo 'SonarQube analysis complete: enforce coverage, security, and policy checks.'
+            }
+        }
+
+        stage('build container image') {
+            steps {
+                // Build the Docker image using the image tag calculated in the init stage
+                // OCI labels make the image easier to trace back to Jenkins and Git
+                sh """
+                    docker build --pull \
+                      --label org.opencontainers.image.title=${env.APP_NAME} \
+                      --label org.opencontainers.image.version=${appVersion} \
+                      --label org.opencontainers.image.revision=${shortCommit} \
+                      --label ci.jenkins.job=${env.JOB_NAME} \
+                      --label ci.jenkins.build=${env.BUILD_NUMBER} \
+                      -t ${imageName} .
+                """
+
+                // Verify the image exists locally before scanning or pushing it:
+                sh "docker image inspect ${imageName} >/dev/null"
+            }
+        }
+
+        stage('scan container image') {
+            when {
+                // Run image scanning only when security scans are enabled.
+                expression { return params.RUN_SECURITY_SCANS }
+            }
+            steps {
+                // Fail on high or critical vulnerabilities
+                sh "trivy image --exit-code 1 --severity HIGH,CRITICAL ${imageName}"
+            }
+        }
+
+        stage('push container image') {
+            when {
+                // Push images for deployable builds only. Pull requests often build and test without pushing images
+                expression { return shouldDeploy }
+            }
+            steps {
+                // Use Jenkins credentials without printing the password in logs
+                withCredentials([usernamePassword(
+                    credentialsId: env.REGISTRY_CREDENTIALS_ID,
+                    usernameVariable: 'REGISTRY_USER',
+                    passwordVariable: 'REGISTRY_PASSWORD'
+                )]) {
+                    // Log in to the registry securely using stdin:
+                    // echo "$REGISTERY_IMAGE" | cut -d/ f1 =>   registry.example.com/myorg/myapp => registry.example.com
+                    sh 'echo "$REGISTRY_PASSWORD" | docker login -u "$REGISTRY_USER" --password-stdin "$(echo "$REGISTRY_IMAGE" | cut -d/ -f1)"'
+
+                    // Push the immutable image tag
+                    sh "docker push ${imageName}"
+                }
+            }
+        }
+
+        stage('deploy to dev') {
+            when {
+                // Deploy to dev when TARGET_ENV is dev:
+                expression { return params.TARGET_ENV == 'dev' }
+            }
+            steps {
+                // Bind kubeconfig from Jenkins credentials as a temporary file. This allows kubectl and Helm commands to authenticate to the cluster without storing kubeconfig files on the Jenkins agent:
+                withCredentials([file(credentialsId: env.KUBECONFIG_CREDENTIALS_ID, variable: 'KUBECONFIG')]) {
+                    // Deploy the same image that was built and pushed earlier
+                    sh """
+                        helm upgrade --install ${env.APP_NAME}-dev ${env.HELM_CHART_DIR} \
+                          -f ${env.HELM_VALUES_DEV} \
+                          --set image.repository=${env.REGISTRY_IMAGE} \
+                          --set image.tag=${imageTag} \
+                          --namespace dev \
+                          --create-namespace \
+                          --wait \
+                          --timeout 5m
+                    """
+                }
+            }
+        }
+
+        stage('deploy to qa') {
+            when {
+                // Deploy to qa when TARGET_ENV is qa
+                expression { return params.TARGET_ENV == 'qa' }
+            }
+            steps {
+                // Bind kubeconfig from Jenkins credentials as a temporary file.
+                withCredentials([file(credentialsId: env.KUBECONFIG_CREDENTIALS_ID, variable: 'KUBECONFIG')]) {
+                    // Deploy to QA with QA values while keeping the exact same image tag
+                    sh """
+                        helm upgrade --install ${env.APP_NAME}-qa ${env.HELM_CHART_DIR} \
+                          -f ${env.HELM_VALUES_QA} \
+                          --set image.repository=${env.REGISTRY_IMAGE} \
+                          --set image.tag=${imageTag} \
+                          --namespace qa \
+                          --create-namespace \
+                          --wait \
+                          --timeout 10m
+                    """
+                }
+            }
+        }
+
+        stage('production approval') {
+            when {
+                // Approval is only required for production deployments
+                expression { return params.TARGET_ENV == 'prod' }
+            }
+            steps {
+                // Fail fast if the user did not explicitly confirm production deployment at build start
+                script {
+                    if (!params.CONFIRM_PROD_DEPLOY) {
+                        error('Production deployment requires CONFIRM_PROD_DEPLOY=true')
+                    }
+                }
+
+                // Pause for a human approval before production. Keep timeout so builds do not wait forever:
+                timeout(time: 30, unit: 'MINUTES') {
+                    input message: "Deploy ${imageName} to production?", ok: 'Deploy to prod'
+                }
+            }
+        }
+
+        stage('deploy to prod') {
+            when {
+                // Deploy to prod only when TARGET_ENV is prod
+                expression { return params.TARGET_ENV == 'prod' }
+            }
+            steps {
+                // Bind kubeconfig from Jenkins credentials as a temporary file
+                withCredentials([file(credentialsId: env.KUBECONFIG_CREDENTIALS_ID, variable: 'KUBECONFIG')]) {
+                    // Use Helm atomic mode so Helm automatically rolls back if the upgrade fails
+                    sh """
+                        helm upgrade --install ${env.APP_NAME}-prod ${env.HELM_CHART_DIR} \
+                          -f ${env.HELM_VALUES_PROD} \
+                          --set image.repository=${env.REGISTRY_IMAGE} \
+                          --set image.tag=${imageTag} \
+                          --namespace prod \
+                          --create-namespace \
+                          --wait \
+                          --atomic \
+                          --timeout 10m
+                    """
+                    // -atomic means the deployment is all-or-nothing: if the deployment fails, Helm will automatically roll back to the previous version. This helps prevent downtime in production if there is an issue with the new release
+                }
+            }
+        }
+
+        // A smoke test is a quick, shallow check that the most critical parts of a deployed app are actually working — done immediately after deployment, before deeper testing
+        stage('smoke test') {
+            when {
+                // Smoke tests run only after a deployment target was selected
+                expression { return shouldDeploy }
+            }
+            steps {
+                // Choose the health check URL for the selected environment:
+                script {
+                    def healthUrlByEnv = [
+                        dev : 'https://dev.example.com/health',
+                        qa  : 'https://qa.example.com/health',
+                        prod: 'https://example.com/health'
+                    ]
+
+                    env.HEALTH_URL = healthUrlByEnv[params.TARGET_ENV]
+                }
+
+                // Fail the build if the app health endpoint does not return success
+                sh 'curl --fail --show-error --silent --retry 5 --retry-delay 10 "$HEALTH_URL"'
+            }
+        }
+    }
+
+    // The post section at the pipeline level runs after all stages have completed, regardless of success or failure. This is a good place for cleanup and final notifications:
+    post {
+        always {
+            // Show the final Jenkins result in the log even for aborted or failed runs:
+            echo "Pipeline finished with status: ${currentBuild.currentResult}"
+
+            // Remove workspace files after the build to reduce disk usage and avoid cross-build contamination:
+            cleanWs(deleteDirs: true, notFailBuild: true)
+        }
+
+        // Success notification
+        success {
+            slackSend(
+                channel: '#ci-cd',
+                color: 'good',
+                message: """
+                    ✅ *SUCCESS* — `${env.JOB_NAME}` #${env.BUILD_NUMBER}
+                    • Image: `${imageName}`
+                    • Branch: `${env.GIT_BRANCH}`
+                    • Duration: ${currentBuild.durationString}
+                    • Build: ${env.BUILD_URL}
+                """.stripIndent()
+            )
+        }
+
+        unstable {
+            slackSend(
+                channel: '#ci-cd',
+                color: 'warning',
+                message: """
+                    ⚠️ *UNSTABLE* — `${env.JOB_NAME}` #${env.BUILD_NUMBER}
+                    • Image: `${imageName}`
+                    • Branch: `${env.GIT_BRANCH}`
+                    • Duration: ${currentBuild.durationString}
+                    • Build: ${env.BUILD_URL}
+                """.stripIndent()
+            )
+        }
+
+        failure {
+            slackSend(
+                channel: '#ci-cd',
+                color: 'danger',
+                message: """
+                    ❌ *FAILURE* — `${env.JOB_NAME}` #${env.BUILD_NUMBER}
+                    • Image: `${imageName}`
+                    • Branch: `${env.GIT_BRANCH}`
+                    • Duration: ${currentBuild.durationString}
+                    • Build: ${env.BUILD_URL}
+                """.stripIndent()
+            )
+        }
+
+        aborted {
+            slackSend(
+                channel: '#ci-cd',
+                color: '#808080',
+                message: """
+                    🚫 *ABORTED* — `${env.JOB_NAME}` #${env.BUILD_NUMBER}
+                    • Image: `${imageName}`
+                    • Branch: `${env.GIT_BRANCH}`
+                    • Duration: ${currentBuild.durationString}
+                    • Build: ${env.BUILD_URL}
+                """.stripIndent()
+            )
+        }
+    }
+}

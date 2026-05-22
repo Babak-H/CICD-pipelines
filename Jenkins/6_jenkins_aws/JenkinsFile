@@ -4,6 +4,10 @@ pipeline {
     tools {
         maven 'maven-3.6'
     }
+    environment {
+        EC2_INSTANCE = 'ec2-user@3.122.239.45'
+        REMOTE_DEPLOY_DIR = '/home/ec2-user/demo-app'
+    }
 
     stages {
         stage("test") {
@@ -11,18 +15,16 @@ pipeline {
                 script {
                     echo "testing the app..."
                     // this image name can change based on version incrementation
-                    env.IMAGE_NAME = "nanajanashia/demo-app:java-maven-1.0"
+                    env.IMAGE_NAME = "DOCKER_USERNAME/demo-app:java-maven-1.0"
                 }
             }
         }
     
-
         stage("build") {
             steps {
                 script {
                     echo "building the app..."
-                }
-                
+                } 
             }
         }
 
@@ -30,24 +32,23 @@ pipeline {
             steps {
                 script {
                     echo "deploying image to EC2..."
-
-                    // //simple Dockerfile for only two containers
-                    // def dockerCmd = 'docker run -p 3000:3080 -d kimsungbabak/docker-node-app:1.0.0'
-                    // sshagent(['ec2-server-key']) {
-                    //     sh "ssh -o StrictHostKeyChecking=no ec2-user@3.122.239.45 ${dockerCmd}"
-                    // }
-
-                    // docker-compose file
-                    def shellCmd = "bash ./server-cmds.sh ${IMAGE_NAME}"
-                    def ec2Instance = "ec2-user@3.122.239.45"
+                    // Note: This assumes the EC2 instance has Docker installed and the Jenkins server has SSH access to it using the 'ec2-server-key' credentials
                     sshagent(['ec2-server-key']) {
-                        // copy docker-compose yaml file amd shell script into the server
-                        sh "scp server-cmds.sh ${ec2Instance}:/home/ec2-user"
-                        sh "scp docker-compose.yml ${ec2Instance}:/home/ec2-user"
-                        sh "ssh -o StrictHostKeyChecking=no ${ec2Instance} ${shellCmd}"
+                        sh '''
+                            set -euo pipefail
+
+                            ssh -o StrictHostKeyChecking=accept-new "${EC2_INSTANCE}" "mkdir -p '${REMOTE_DEPLOY_DIR}'"
+
+                            scp -o StrictHostKeyChecking=accept-new \
+                              Jenkins/6_jenkins_aws/server-cmds.sh \
+                              Jenkins/6_jenkins_aws/docker-compose.yml \
+                              "${EC2_INSTANCE}:${REMOTE_DEPLOY_DIR}/"
+
+                            ssh -o StrictHostKeyChecking=accept-new "${EC2_INSTANCE}" \
+                              "cd '${REMOTE_DEPLOY_DIR}' && bash ./server-cmds.sh '${IMAGE_NAME}'"
+                        '''
                     }
                 }
-
             }
         }
     }

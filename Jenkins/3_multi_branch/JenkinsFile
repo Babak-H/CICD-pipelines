@@ -1,5 +1,7 @@
 /// multi-branch pipeline
+
 pipeline {
+    // we don't specify the agent at the top level, because we want to run different stages on different agents
     agent none
     stages {
 
@@ -14,6 +16,7 @@ pipeline {
 
         stage('build') {
             when {
+                // BRANCH_NAME is a built-in variable in Jenkins that contains the name of the branch being built
                 expression {
                     BRANCH_NAME == 'master'
                 }

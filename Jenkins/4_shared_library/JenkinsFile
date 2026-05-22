@@ -3,6 +3,8 @@
 
 pipeline {
     agent any 
+
+    // tools should be configured in JenkinsUI before we can use them here
     tools {
         maven 'maven-3.6'
     }
@@ -11,6 +13,7 @@ pipeline {
         stage("build jar") {
             steps {
                 script {
+                    // name "buildJar" is defined in the shared library, we can call it directly here, its name of the function in the shared library
                     buildJar()
                 }
             }
@@ -21,7 +24,7 @@ pipeline {
         stage("build image") {
             steps {
                 // call the groovy function with parameter of docker image name
-                buildImage 'kimsungbabak/maven-test-app:3.0'
+                buildImage 'USERNAME_DOCKER/maven-test-app:3.0'
             }
         }
     }

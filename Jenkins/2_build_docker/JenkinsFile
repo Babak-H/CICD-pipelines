@@ -1,5 +1,9 @@
+// first line of pipeline in all JenkinsFiles
 pipeline {
+    // where to execute the code (whoch server/executor, important for jenkins cluster)
     agent any
+    // when we choose build with parameters in UI, we can manually enter the value for these parameters
+    // tools should be configured in JenkinsUI before we can use them here
     tools { 
         maven 'maven-3.6'
     } 
@@ -9,6 +13,7 @@ pipeline {
             steps {
                 script {
                     echo "building the package..."
+                    // we should have the pom.xml file here in the repo to build from it
                     sh 'mvn package'
                 }
             }
@@ -18,11 +23,18 @@ pipeline {
             steps {
                 script {
                     echo "building the image..."
-                    withCredentials([usernamePassword(credentialsId: 'docker-hub-repo', usernameVariable: 'USER', passwordVarialbe: 'PASS')]) {
+                    // the credentials have been defined inside jenkins global credential section, we can use them here to login to docker hub and push the image
+                    withCredentials([usernamePassword(credentialsId: 'docker-hub-repo', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
                         // we should have the docker file here in the repo to build from it
-                        sh 'docker build -t *****/maven-test-app:2.0 .'
-                        sh "echo $PASS | docker login -u $USER --password-stdin "
-                        sh "docker push ******/maven-test-app:2.0"
+                        sh 'docker build -t USERNAME_DOCKER/maven-test-app:2.0 .'
+                        // sh "echo $PASS | docker login -u $USER --password-stdin "
+                        
+                        // set +x makes sure shell command tracing does not print sensitive values in the console log
+                        sh'''
+                            set +x
+                            printf '%s\n' "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+                        '''                        
+                        sh "docker push USERNAME_DOCKER/maven-test-app:2.0"
                     }
                 }
             }

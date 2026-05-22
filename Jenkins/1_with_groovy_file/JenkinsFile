@@ -16,7 +16,7 @@ pipeline {
     } 
     environment {
         NEW_VERSION = '1.3.0'
-        // the credentials have been defined inside jenkins global credential section
+        // the credentials have been defined inside jenkins global credential section, we can pull and use them here
         SERVER_CREDENTIALS = credentials('test-server-creds')
     }
  
@@ -42,7 +42,7 @@ pipeline {
             steps {
                     echo 'building the app...'
                     echo "building version ${NEW_VERSION}"
-                    // sh 'npm build'
+                    sh 'npm build'
             }
         }
 
@@ -62,7 +62,7 @@ pipeline {
         }
 
         stage("deploy") {
-            // same as global parameters, but only for one stage
+            // force the user to select the environment to deploy to, before the steps in this stage can execute
             input {
                 message "select the environmet to deploy to:"
                 ok "env selected"

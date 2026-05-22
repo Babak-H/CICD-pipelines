@@ -10,4 +10,4 @@ services:
     ports:
       - 5432:5432
     environment:
-      - POSTGRESS_PWD
+      - POSTGRES_PASSWORD
